@@ -1,8 +1,8 @@
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 
-from sqlalchemy import select, func, and_
-from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy import select, func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.database.analytics_models import DailySystemStats, UserKeyModelStats, CompletedTaskLog
 
@@ -27,26 +27,31 @@ class AnalyticsRepository:
 
             today = created_at.date()
             profit = cost - prime_cost
-            stmt_daily = mysql_insert(DailySystemStats).values(
+            stmt_daily = pg_insert(DailySystemStats).values(
                 date=today, tasks_completed=1, total_revenue=cost,
                 total_prime_cost=prime_cost, profit=profit
             )
-            stmt_daily_upsert = stmt_daily.on_duplicate_key_update(
-                tasks_completed=DailySystemStats.tasks_completed + 1,
-                total_revenue=DailySystemStats.total_revenue + stmt_daily.inserted.total_revenue,
-                total_prime_cost=DailySystemStats.total_prime_cost + stmt_daily.inserted.total_prime_cost,
-                profit=DailySystemStats.profit + stmt_daily.inserted.profit
+            stmt_daily_upsert = stmt_daily.on_conflict_do_update(
+                index_elements=['date'],
+                set_={
+                    'tasks_completed': DailySystemStats.tasks_completed + 1,
+                    'total_revenue': DailySystemStats.total_revenue + stmt_daily.excluded.total_revenue,
+                    'total_prime_cost': DailySystemStats.total_prime_cost + stmt_daily.excluded.total_prime_cost,
+                    'profit': DailySystemStats.profit + stmt_daily.excluded.profit
+                }
             )
             await session.execute(stmt_daily_upsert)
 
-
-            stmt_user_key = mysql_insert(UserKeyModelStats).values(
+            stmt_user_key = pg_insert(UserKeyModelStats).values(
                 user_telegram_id=user_telegram_id, api_key_id=api_key_id, model_name=model_name,
                 total_tasks_completed=1, total_spending=cost
             )
-            stmt_user_key_upsert = stmt_user_key.on_duplicate_key_update(
-                total_tasks_completed=UserKeyModelStats.total_tasks_completed + 1,
-                total_spending=UserKeyModelStats.total_spending + stmt_user_key.inserted.total_spending
+            stmt_user_key_upsert = stmt_user_key.on_conflict_do_update(
+                index_elements=['user_telegram_id', 'api_key_id', 'model_name'],
+                set_={
+                    'total_tasks_completed': UserKeyModelStats.total_tasks_completed + 1,
+                    'total_spending': UserKeyModelStats.total_spending + stmt_user_key.excluded.total_spending
+                }
             )
             await session.execute(stmt_user_key_upsert)
 

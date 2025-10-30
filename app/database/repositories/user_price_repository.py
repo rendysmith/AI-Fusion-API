@@ -2,7 +2,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 from sqlalchemy import select, delete
-from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.database.main_models import UserPrice
@@ -32,15 +32,17 @@ class UserPriceRepository:
 
         async with self.session_factory() as session:
 
-            stmt = mysql_insert(UserPrice).values(
+            stmt = pg_insert(UserPrice).values(
                 user_telegram_id=user_telegram_id,
                 model_name=model_name,
                 custom_cost=custom_cost
             )
 
-
-            on_duplicate_key_stmt = stmt.on_duplicate_key_update(
-                custom_cost=stmt.inserted.custom_cost
+            on_duplicate_key_stmt = stmt.on_conflict_do_update(
+                index_elements=['user_telegram_id', 'model_name'],
+                set_={
+                    'custom_cost': stmt.excluded.custom_cost
+                }
             )
 
             await session.execute(on_duplicate_key_stmt)

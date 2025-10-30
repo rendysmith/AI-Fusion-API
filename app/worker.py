@@ -1,20 +1,16 @@
 import asyncio
 import json
 import logging
-import traceback
 from datetime import datetime
 
-import aio_pika
 import aiobotocore.client
 import aiohttp
 from aiobotocore.session import get_session
 from aiohttp import ClientTimeout
-from motor.motor_asyncio import AsyncIOMotorCollection
 
-from app.aws.aws_config import AWS_REGION
 from app.database.engine import async_session_factory
-from app.database.mongo_db import get_task_collection
 from app.database.repositories.analytics_repository import AnalyticsRepository
+from app.database.repositories.task_repository import TaskRepository
 from app.database.repositories.user_repository import ApiKeyRepository
 from app.services.providers import example_provider
 from app.settings import settings
@@ -26,7 +22,7 @@ logging.basicConfig(
 
 WORKER_ID = settings.WORKER_ID
 MAX_CONCURRENT_TASKS = settings.WORKER_MAX_CONCURRENT_TASKS
-QUEUE_NAME = 'general_tasks_queue'
+
 
 logger = logging.getLogger(__name__)
 
@@ -41,33 +37,15 @@ MODEL_PROCESSORS = {
 async def process_task(session: aiohttp.ClientSession,
                        s3_client: aiobotocore.client.BaseClient,
                        task_data: dict,
-                       tasks_collection: AsyncIOMotorCollection,
+                       task_repo: TaskRepository,
                        key_repo: ApiKeyRepository,
                        analytics_repo: AnalyticsRepository
                        ):
     task_id = task_data["_id"]
     logger.info(f"TaskID: {task_id} | Начинаю обработку.")
 
+    await task_repo.upsert_and_start_task(task_data, WORKER_ID)
 
-    filter_query = {"_id": task_id}
-    update_data = {
-        "$setOnInsert": {
-            "user_telegram_id": task_data["user_telegram_id"],
-            "api_key_id": task_data["api_key_id"],
-            "model": task_data["model"],
-            "params": task_data.get("params", {}),
-            "cost": task_data.get("cost"),
-            "prime_cost": task_data.get("prime_cost"),
-            "created_at": datetime.fromisoformat(task_data["created_at"])
-        },
-        "$set": {
-            "status": "processing",
-            "processed_by": WORKER_ID,
-            "result": None,
-            "error": None
-        }
-    }
-    await tasks_collection.find_one_and_update(filter_query, update_data, upsert=True)
 
     model_name = task_data["model"]
     params = task_data.get("params", {})
@@ -85,8 +63,7 @@ async def process_task(session: aiohttp.ClientSession,
             task_id=task_id
         )
 
-        update_data = {"status": "completed", "result": result_data}
-        await tasks_collection.update_one({"_id": task_id}, {"$set": update_data})
+        await task_repo.complete_task(task_id, result_data)
         logger.info(f"TaskID: {task_id} | Задача успешно завершена.")
 
 
@@ -108,7 +85,7 @@ async def process_task(session: aiohttp.ClientSession,
 
     except Exception as e:
         logger.error(f"TaskID: {task_id} | Ошибка при обработке: {e}", exc_info=True)
-        await tasks_collection.update_one({"_id": task_id}, {"$set": {"status": "failed", "error": str(e)}})
+        await task_repo.fail_task(task_id, str(e))
         await refund_on_failure(task_data, key_repo)
 
 
@@ -131,8 +108,51 @@ async def refund_on_failure(task: dict, key_repo: ApiKeyRepository):
         logger.error(f"TaskID: {task_id} | Невозможно выполнить возврат: нет api_key_id или cost.")
 
 
+async def handle_message(
+    message: dict,
+    sqs_client: aiobotocore.client.BaseClient,
+    http_session: aiohttp.ClientSession,
+    s3_client: aiobotocore.client.BaseClient,
+    task_repo: TaskRepository,
+    key_repo: ApiKeyRepository,
+    analytics_repo: AnalyticsRepository
+):
+
+    task_data = None
+    receipt_handle = message['ReceiptHandle']
+
+    try:
+        task_data = json.loads(message['Body'])
+        task_id = task_data.get("_id", "unknown_id")
+        logger.info(f"TaskID: {task_id} | Задача получена из очереди.")
+
+        await process_task(
+            session=http_session,
+            s3_client=s3_client,
+            task_data=task_data,
+            task_repo=task_repo,
+            key_repo=key_repo,
+            analytics_repo=analytics_repo
+        )
+
+        # ЕСЛИ УСПЕШНО - УДАЛЯЕМ СООБЩЕНИЕ ИЗ ОЧЕРЕДI
+        await sqs_client.delete_message(
+            QueueUrl=settings.YANDEX_QUEUE_URL,
+            ReceiptHandle=receipt_handle
+        )
+        logger.info(f"TaskID: {task_id} | Задача обработана и удалена из очереди.")
+
+    except Exception as e:
+        task_id = task_data['_id'] if task_data else "unknown_id"
+        logging.error(
+            f"TaskID: {task_id} | КРИТИЧЕСКАЯ ОШИБКА. "
+            f"Сообщение НЕ будет удалено и вернется в очередь (или уйдет в DLQ). Ошибка: {e}",
+            exc_info=True
+        )
+
+
 async def main():
-    tasks_collection = get_task_collection()
+    task_repo = TaskRepository(async_session_factory)
     key_repo = ApiKeyRepository(async_session_factory)
     analytics_repo = AnalyticsRepository(async_session_factory)
 
@@ -142,66 +162,57 @@ async def main():
     aws_session = get_session()
 
 
-    connection = await aio_pika.connect_robust(settings.RABBITMQ_URL)
+    async with aiohttp.ClientSession(timeout=timeout) as http_session:
+        async with aws_session.create_client(
+                's3',
+                region_name=settings.YANDEX_REGION,
+                endpoint_url=settings.YANDEX_STORAGE_ENDPOINT,
+                aws_access_key_id=settings.YANDEX_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.YANDEX_SECRET_ACCESS_KEY
+        ) as s3_client:
 
-    async with connection:
-        channel = await connection.channel()
+            async with aws_session.create_client(
+                'sqs',
+                region_name=settings.YANDEX_QUEUE_REGION,
+                endpoint_url=settings.YANDEX_QUEUE_ENDPOINT,
+                aws_access_key_id=settings.YANDEX_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.YANDEX_SECRET_ACCESS_KEY
+            ) as sqs_client:
 
-        await channel.set_qos(prefetch_count=MAX_CONCURRENT_TASKS)
+                logger.info(" [*] Ожидание задач из YMQS. Для выхода нажмите CTRL+C")
 
-        dlx_name = f"{QUEUE_NAME}.dlx"
-        dlq_name = f"{QUEUE_NAME}.dlq"
-
-
-        dlx = await channel.declare_exchange(dlx_name, aio_pika.ExchangeType.FANOUT)
-
-
-        dlq = await channel.declare_queue(dlq_name, durable=True)
-
-        await dlq.bind(dlx)
-
-        queue = await channel.declare_queue(
-            QUEUE_NAME,
-            durable=True,
-            arguments={
-                "x-dead-letter-exchange": dlx_name
-            }
-        )
-        async with aiohttp.ClientSession(timeout=timeout) as http_session:
-            async with aws_session.create_client('s3', region_name=AWS_REGION) as s3_client:
-
-
-                async def on_message(message: aio_pika.IncomingMessage):
+                while True:
                     try:
-                        async with message.process(requeue=False):
 
-                            task_data = json.loads(message.body.decode())
-                            logger.info(f"TaskID: {task_data['_id']} | Задача получена из очереди.")
+                        response = await sqs_client.receive_message(
+                            QueueUrl=settings.YANDEX_QUEUE_URL,
+                            MaxNumberOfMessages=MAX_CONCURRENT_TASKS,
+                            WaitTimeSeconds=20
+                        )
+
+                        if 'Messages' in response:
+                            messages = response['Messages']
+                            logger.info(f"Получено {len(messages)} задач.")
 
 
-                            await process_task(
-                                session=http_session,
-                                s3_client=s3_client,
-                                task_data=task_data,
-                                tasks_collection=tasks_collection,
-                                key_repo=key_repo,
-                                analytics_repo=analytics_repo
-                            )
+                            tasks = []
+                            for message in messages:
+                                tasks.append(
+                                    handle_message(
+                                        message, sqs_client, http_session, s3_client,
+                                        task_repo, key_repo, analytics_repo
+                                    )
+                                )
+                            await asyncio.gather(*tasks)
 
+                        else:
+                            pass
+
+                    except KeyboardInterrupt:
+                        break
                     except Exception as e:
-
-                        error_traceback = traceback.format_exc()
-                        task_id = task_data['_id'] if task_data else "unknown_id"
-
-                        logging.error(
-                            f"TaskID: {task_id} | КРИТИЧЕСКАЯ ОШИБКА. Задача будет отправлена в DLQ. Ошибка: {e}",
-                            exc_info=True)
-
-
-                await queue.consume(on_message)
-
-                logger.info(" [*] Ожидание задач. Для выхода нажмите CTRL+C")
-                await asyncio.Future()
+                        logger.error(f"Ошибка в цикле SQS: {e}", exc_info=True)
+                        await asyncio.sleep(5)
 
 
 if __name__ == "__main__":

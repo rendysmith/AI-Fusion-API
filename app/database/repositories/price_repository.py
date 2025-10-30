@@ -1,5 +1,5 @@
 from sqlalchemy.future import select
-from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.database.main_models import Price
 
@@ -18,12 +18,15 @@ class PriceRepository:
 
     async def upsert(self, price: Price):
         async with self.session_factory() as session:
-            stmt = mysql_insert(Price).values(
+            stmt = pg_insert(Price).values(
                 model_name=price.model_name, cost=price.cost, prime_cost=price.prime_cost
             )
-            on_duplicate_key_stmt = stmt.on_duplicate_key_update(
-                cost=stmt.inserted.cost,
-                prime_cost=stmt.inserted.prime_cost
+            on_duplicate_key_stmt = stmt.on_conflict_do_update(
+                index_elements=['model_name'],
+                set_={
+                    'cost': stmt.excluded.cost,
+                    'prime_cost': stmt.excluded.prime_cost
+                }
             )
             await session.execute(on_duplicate_key_stmt)
             await session.commit()

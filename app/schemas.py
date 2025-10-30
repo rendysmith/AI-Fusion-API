@@ -3,41 +3,38 @@ from typing import List, Literal, Optional, Any, Annotated, Union
 
 from pydantic import BaseModel, Field
 
+class BaseModelParams(BaseModel):
+    pass
 
 
-class VideoModelParams(BaseModel):
-    model_name: Literal["video-model"]
-    prompt: str = Field(..., description="Main prompt for generation")
-    image_url: Optional[str] = Field(None, description='URL / Base 64 of image')
-    duration: Literal[5, 10] = Field(5, description='Duration of video')
-    translate: bool = False
+class PromptMixin(BaseModel):
+    prompt: str = Field(..., description="Основной промпт для генерации.")
 
 
-class ImageModelParams(BaseModel):
-    model_name: Literal["image-model"]
-    prompt: str = Field(..., description="Main prompt for generation")
-    negative_prompt: Optional[str] = Field(None, description='Negative prompt for generation')
-    num_images: int = Field(1, ge=1, le=4)
+
+class SoraParams(BaseModelParams, PromptMixin):
+    model_name: Literal["sora"]
+
+    image_url: Optional[str] = Field(
+        None,
+        description="Опциональный URL или Base64 для генерации видео из изображения (Image-to-Video)."
+    )
+
+    orientation: Literal["landscape", "portrait"] = Field(
+        "landscape",
+        description="Ориентация генерируемого видео. По умолчанию 'landscape'."
+    )
 
 
-class RandomModelOneParams(BaseModel):
-    model_name: Literal["random-model-one"]
-    prompt: str = Field(..., description="Main prompt for generation")
+    duration: Literal[10, 15] = Field(10, description="Длительность видео в секундах. (10 или 15)")
 
-
-class RandomModelTwoParams(BaseModel):
-    model_name: Literal["random-model-two"]
-    prompt: str = Field(..., description="Main prompt for generation")
 
 
 
 
 AnyModelParams = Annotated[
     Union[
-        VideoModelParams,
-        ImageModelParams,
-        RandomModelOneParams,
-        RandomModelTwoParams
+        SoraParams
     ],
     Field(discriminator="model_name")
 ]

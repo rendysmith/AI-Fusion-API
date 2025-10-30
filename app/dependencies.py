@@ -3,12 +3,10 @@ from fastapi.security import OAuth2PasswordBearer
 from typing import Tuple
 
 from app.database.repositories.analytics_repository import AnalyticsRepository
-from app.database.repositories.log_repository import AdminLogRepository
 from app.database.repositories.price_repository import PriceRepository
 from app.database.engine import async_session_factory
+from app.database.repositories.task_repository import TaskRepository
 
-
-from app.database.mongo_db import database as mongo_database_instance
 from app.database.repositories.user_price_repository import UserPriceRepository
 from app.database.repositories.user_repository import UserRepository, ApiKeyRepository
 from app.database.main_models import User, ApiKey
@@ -61,12 +59,9 @@ async def get_current_admin_user_and_key(auth_data: Tuple[User, ApiKey] = Depend
 def get_price_repository() -> PriceRepository:
     return PriceRepository(async_session_factory)
 
-def get_log_repository() -> AdminLogRepository:
-    return AdminLogRepository(async_session_factory)
 
-
-def get_tasks_database():
-    return mongo_database_instance
+def get_task_repository() -> TaskRepository:
+    return TaskRepository(async_session_factory)
 
 def get_analytics_repository() -> AnalyticsRepository:
     return AnalyticsRepository(async_session_factory)

@@ -6,7 +6,6 @@ Base = declarative_base()
 
 
 class DailySystemStats(Base):
-    """Витрина данных №1: Агрегаты по дням для быстрых дашбордов."""
     __tablename__ = 'daily_system_stats'
 
     date = Column(Date, primary_key=True)
@@ -17,7 +16,6 @@ class DailySystemStats(Base):
 
 
 class UserKeyModelStats(Base):
-    """Витрина данных №2: Агрегаты по пользователю, ключу и модели."""
     __tablename__ = 'user_key_model_stats'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -34,7 +32,6 @@ class UserKeyModelStats(Base):
 
 
 class CompletedTaskLog(Base):
-    """Таблица фактов: Детальный лог каждой задачи для глубокого анализа."""
     __tablename__ = 'completed_task_log'
 
     id = Column(Integer, primary_key=True, autoincrement=True)

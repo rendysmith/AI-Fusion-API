@@ -54,12 +54,3 @@ class Price(Base):
     cost = Column(DECIMAL(precision=15, scale=6), nullable=False)
     prime_cost = Column(DECIMAL(precision=15, scale=6), default=0.0, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
-
-
-class AdminLog(Base):
-    __tablename__ = "admin_logs"
-
-    id = Column(Integer, primary_key=True, index=True)
-    timestamp = Column(DateTime, server_default=func.now())
-    admin_key_id = Column(Integer, nullable=False)
-    action = Column(String(255), nullable=False)

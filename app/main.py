@@ -1,28 +1,25 @@
 import json
+import logging
 
 from aiobotocore.session import get_session
 from fastapi import FastAPI, Depends, HTTPException
 from contextlib import asynccontextmanager
 from typing import Tuple
 
-import aio_pika
-from motor.motor_asyncio import AsyncIOMotorCollection
+
 from starlette import status
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import HTMLResponse
 
-from app.aws.aws_config import AWS_REGION
 from app.database.main_models import Base, ApiKey, User
+from app.database.repositories.task_repository import TaskRepository
 from app.database.repositories.user_price_repository import UserPriceRepository
-from app.database.repositories.user_repository import UserRepository, ApiKeyRepository
+from app.database.repositories.user_repository import ApiKeyRepository
 from app.database.engine import engine
-from app.database.mongo_db import get_task_collection
 from app.database.repositories.price_repository import PriceRepository
 from app import schemas
 from app import dependencies
 from app.documentation import API_DESCRIPTION
-from app.routers import admin_main_router
-from app.routers.admin.users import UserCreate, UserBase, UserWithKeys
 from app.schemas import TaskStatusResponse
 from app.services.generation_service import GenerationService
 from app.settings import settings
@@ -39,24 +36,28 @@ async def lifespan(app: FastAPI):
 
     session = get_session()
 
-    async with session.create_client('s3', region_name=AWS_REGION) as s3_client:
+    async with session.create_client(
+            's3',
+            region_name=settings.YANDEX_REGION,
+            endpoint_url=settings.YANDEX_STORAGE_ENDPOINT,
+            aws_access_key_id=settings.YANDEX_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.YANDEX_SECRET_ACCESS_KEY
+    ) as s3_client:
 
         app.state.s3_client = s3_client
 
-        try:
-            connection = await aio_pika.connect_robust(settings.RABBITMQ_URL)
-            channel = await connection.channel()
+        async with session.create_client(
+                'sqs',
+                region_name=settings.YANDEX_QUEUE_REGION,
+                endpoint_url=settings.YANDEX_QUEUE_ENDPOINT,
+                aws_access_key_id=settings.YANDEX_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.YANDEX_SECRET_ACCESS_KEY
+        ) as sqs_client:
 
-            app.state.rabbitmq_channel = channel
-            app.state.rabbitmq_connection = connection
-            print("Successfully connected to RabbitMQ")
+            app.state.sqs_client = sqs_client
+            logging.info("Successfully connected to Yandex Message Queue")
 
             yield
-
-        finally:
-            if connection:
-                await connection.close()
-                print("RabbitMQ connection closed")
 
 app = FastAPI(
     title=settings.APP_TITLE,
@@ -66,8 +67,6 @@ app = FastAPI(
 )
 
 MODELS_WITH_DURATION_COST = settings.MODELS_WITH_DURATION_COST
-
-app.include_router(admin_main_router.router)
 
 
 
@@ -80,62 +79,33 @@ app.add_middleware(
 )
 
 
-
-
-@app.post("/users", response_model=UserBase, tags=["User Management"], include_in_schema=False)
-async def create_user(
-    user_schema: UserCreate,
-    user_repo: UserRepository = Depends(dependencies.get_user_repository)
-):
-
-    user = await user_repo.get_or_create(telegram_id=user_schema.telegram_id)
-    answer = {'telegram_id': user.telegram_id, 'coefficient': user.coefficient}
-    return answer
-
-
-@app.get("/me/keys", response_model=UserWithKeys, tags=["My Account"], include_in_schema=False)
-async def get_my_keys(
-    auth_data: Tuple[User, ApiKey] = AUTH_DEPENDENCY,
-    user_repo: UserRepository = Depends(dependencies.get_user_repository),
-):
-
-    user, _ = auth_data
-    user_with_keys = await user_repo.get_with_keys(telegram_id=user.telegram_id)
-    return user_with_keys
-
-
-@app.get("/me/balance", response_model=schemas.Balance, tags=["My Account"], include_in_schema=False)
-async def get_my_key_balance(auth_data: Tuple[User, ApiKey] = AUTH_DEPENDENCY):
-
-    _, api_key = auth_data
-    return {"key_balance": api_key.balance}
-
-
 @app.get("/tasks/{task_id}", response_model=TaskStatusResponse, tags=["Tasks"])
 async def get_task_status(
     task_id: str,
-    tasks_collection: AsyncIOMotorCollection = Depends(get_task_collection),
+    task_repo: TaskRepository = Depends(dependencies.get_task_repository),
     auth_data: Tuple[User, ApiKey] = AUTH_DEPENDENCY
 ):
 
     user, _ = auth_data
 
-    task = await tasks_collection.find_one({"_id": task_id})
+    task = await task_repo.get_task(task_id)
+
+
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
 
-    if task.get("user_telegram_id") != user.telegram_id:
+    if task.user_telegram_id != user.telegram_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to access this task"
         )
 
     return TaskStatusResponse(
-        task_id=task["_id"],
-        status=task["status"],
-        result=task.get("result"),
-        error=task.get("error")
+        task_id=task.id,
+        status=task.status,
+        result=task.result,
+        error=task.error
     )
 
 
@@ -161,28 +131,11 @@ async def generate(
 
     task_id, task_message_body = await service.prepare_generation_task(request_data.params)
 
-    channel: aio_pika.Channel = app.state.rabbitmq_channel
+    sqs_client = app.state.sqs_client
 
-    routing_key = 'general_tasks_queue'
-
-
-    dlx_name = f"{routing_key}.dlx"
-    queue_arguments = {
-        "x-dead-letter-exchange": dlx_name
-    }
-
-    await channel.declare_queue(
-        routing_key,
-        durable=True,
-        arguments=queue_arguments
-    )
-
-    await channel.default_exchange.publish(
-        aio_pika.Message(
-            body=json.dumps(task_message_body, default=str).encode(),
-            delivery_mode=aio_pika.DeliveryMode.PERSISTENT
-        ),
-        routing_key=routing_key
+    await sqs_client.send_message(
+        QueueUrl=settings.YANDEX_QUEUE_URL,
+        MessageBody=json.dumps(task_message_body, default=str)
     )
 
     return schemas.GenerateAcceptedResponse(task_id=task_id)
