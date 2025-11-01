@@ -1,59 +1,59 @@
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from typing import Tuple
+from fastapi import Depends, HTTPException, Security
+from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
+from starlette import status
 
+from app.database.main_models import User
+from app.database.redis_db import get_redis_client
 from app.database.repositories.analytics_repository import AnalyticsRepository
+from app.database.repositories.circuit_breaker_repository import CircuitBreakerRepository
 from app.database.repositories.price_repository import PriceRepository
 from app.database.engine import async_session_factory
+from app.database.repositories.qr_session_repository import QrSessionRepository
 from app.database.repositories.task_repository import TaskRepository
 
-from app.database.repositories.user_price_repository import UserPriceRepository
-from app.database.repositories.user_repository import UserRepository, ApiKeyRepository
-from app.database.main_models import User, ApiKey
+from app.database.repositories.user_repository import UserRepository
+from app.services.firebase_service import verify_firebase_token
+
+import redis.asyncio as aioredis
+
 from app.settings import settings
-
-
-ADMIN_API_KEY = settings.ADMIN_API_KEY
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 def get_user_repository() -> UserRepository:
     return UserRepository(async_session_factory)
 
 
-def get_key_repository() -> ApiKeyRepository:
-    return ApiKeyRepository(async_session_factory)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
-async def get_current_user_and_key(
+async def get_current_user(
         token: str = Depends(oauth2_scheme),
-        key_repository: ApiKeyRepository = Depends(get_key_repository)
-) -> Tuple[User, ApiKey]:
-    api_key_obj = await key_repository.get_by_key_with_owner(key_value=token)
+        user_repo: UserRepository = Depends(get_user_repository)
+) -> User:
 
-    if api_key_obj is None or api_key_obj.owner is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
-            headers={"WWW-Authenticate": "Bearer"},
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        decoded_token = verify_firebase_token(token)
+        firebase_uid = decoded_token.get("uid")
+
+        if firebase_uid is None:
+            raise credentials_exception
+
+
+        user = await user_repo.get_or_create_by_firebase_uid(
+            uid=firebase_uid,
+            email=decoded_token.get("email")
         )
-    return api_key_obj.owner, api_key_obj
+        return user
 
+    except ValueError:
+        raise credentials_exception
 
-async def get_current_admin_user_and_key(auth_data: Tuple[User, ApiKey] = Depends(get_current_user_and_key)) -> Tuple[User, ApiKey]:
-
-    _user, api_key = auth_data
-
-    if api_key.key_value != ADMIN_API_KEY:
-
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Administrator rights required"
-        )
-
-
-    return auth_data
 
 
 def get_price_repository() -> PriceRepository:
@@ -67,5 +67,33 @@ def get_analytics_repository() -> AnalyticsRepository:
     return AnalyticsRepository(async_session_factory)
 
 
-def get_user_price_repository() -> UserPriceRepository:
-    return UserPriceRepository(async_session_factory)
+def get_qr_session_repository(
+    redis_client: aioredis.Redis = Depends(get_redis_client)
+) -> QrSessionRepository:
+    return QrSessionRepository(redis_client)
+
+
+def get_circuit_breaker_repository(
+    redis_client: aioredis.Redis = Depends(get_redis_client)
+) -> CircuitBreakerRepository:
+    return CircuitBreakerRepository(redis_client)
+
+
+api_key_header = APIKeyHeader(name="Authorization", auto_error=False)
+
+
+async def check_bot_secret_key(header: str = Security(api_key_header)):
+
+    if not header:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization Header"
+        )
+
+    if header == f"Bearer {settings.BOT_SECRET_KEY}":
+        return True
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Invalid or missing bot secret key"
+    )

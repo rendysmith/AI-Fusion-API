@@ -27,8 +27,7 @@ class TaskRepository:
 
             insert_values = {
                 "id": task_data["_id"],
-                "user_telegram_id": task_data["user_telegram_id"],
-                "api_key_id": task_data["api_key_id"],
+                "user_id": task_data["user_id"],
                 "model_name": task_data["model"],
                 "params": task_data.get("params", {}),
                 "cost": task_data.get("cost"),

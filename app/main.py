@@ -4,33 +4,40 @@ import logging
 from aiobotocore.session import get_session
 from fastapi import FastAPI, Depends, HTTPException
 from contextlib import asynccontextmanager
-from typing import Tuple
 
 
 from starlette import status
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import HTMLResponse
 
-from app.database.main_models import Base, ApiKey, User
+from app.database.base import Base
+from app.database.main_models import User
 from app.database.repositories.task_repository import TaskRepository
-from app.database.repositories.user_price_repository import UserPriceRepository
-from app.database.repositories.user_repository import ApiKeyRepository
 from app.database.engine import engine
 from app.database.repositories.price_repository import PriceRepository
 from app import schemas
 from app import dependencies
+from app.database.repositories.user_repository import UserRepository
+from app.dependencies import get_current_user
 from app.documentation import API_DESCRIPTION
 from app.schemas import TaskStatusResponse
+from app.services.firebase_service import initialize_firebase
 from app.services.generation_service import GenerationService
 from app.settings import settings
 
+from app.routers import auth as auth_router
 
-AUTH_DEPENDENCY = Depends(dependencies.get_current_user_and_key)
 
+import app.database.main_models
+import app.database.analytics_models
+import app.database.task_models
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+
+    initialize_firebase()
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -50,14 +57,17 @@ async def lifespan(app: FastAPI):
                 'sqs',
                 region_name=settings.YANDEX_QUEUE_REGION,
                 endpoint_url=settings.YANDEX_QUEUE_ENDPOINT,
-                aws_access_key_id=settings.YANDEX_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.YANDEX_SECRET_ACCESS_KEY
+                aws_access_key_id=settings.YANDEX_SQS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.YANDEX_SQS_SECRET_ACCESS_KEY
         ) as sqs_client:
 
             app.state.sqs_client = sqs_client
             logging.info("Successfully connected to Yandex Message Queue")
 
             yield
+
+
+AUTH_DEPENDENCY = Depends(get_current_user)
 
 app = FastAPI(
     title=settings.APP_TITLE,
@@ -66,8 +76,8 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-MODELS_WITH_DURATION_COST = settings.MODELS_WITH_DURATION_COST
 
+app.include_router(auth_router.router)
 
 
 app.add_middleware(
@@ -83,10 +93,9 @@ app.add_middleware(
 async def get_task_status(
     task_id: str,
     task_repo: TaskRepository = Depends(dependencies.get_task_repository),
-    auth_data: Tuple[User, ApiKey] = AUTH_DEPENDENCY
+    user: User = AUTH_DEPENDENCY
 ):
 
-    user, _ = auth_data
 
     task = await task_repo.get_task(task_id)
 
@@ -94,8 +103,7 @@ async def get_task_status(
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
-
-    if task.user_telegram_id != user.telegram_id:
+    if task.user_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to access this task"
@@ -113,20 +121,15 @@ async def get_task_status(
           tags=["Core Logic"])
 async def generate(
         request_data: schemas.GenerateRequest,
-        auth_data: Tuple[User, ApiKey] = AUTH_DEPENDENCY,
-        key_repo: ApiKeyRepository = Depends(dependencies.get_key_repository),
+        user: User = AUTH_DEPENDENCY,
         price_repo: PriceRepository = Depends(dependencies.get_price_repository),
-        user_price_repo: UserPriceRepository = Depends(dependencies.get_user_price_repository)
+        user_repo: UserRepository = Depends(dependencies.get_user_repository)
 ):
-
-    user, api_key = auth_data
 
     service = GenerationService(
         user=user,
-        api_key=api_key,
-        key_repo=key_repo,
         price_repo=price_repo,
-        user_price_repo=user_price_repo,
+        user_repo=user_repo
     )
 
     task_id, task_message_body = await service.prepare_generation_task(request_data.params)

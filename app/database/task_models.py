@@ -1,7 +1,7 @@
-from sqlalchemy import Column, String, DateTime, func, BigInteger, Integer, Float, Text
+from sqlalchemy import Column, String, DateTime, func, Integer, Float, Text, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
 
-from app.database.main_models import Base
+from app.database.base import Base
 
 
 class GenerationTask(Base):
@@ -11,13 +11,12 @@ class GenerationTask(Base):
     id = Column(String(36), primary_key=True, index=True)
 
     status = Column(String(50), nullable=False, default="pending", index=True)
-    created_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
 
-    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
 
-    user_telegram_id = Column(BigInteger, index=True, nullable=False)
-    api_key_id = Column(Integer, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     model_name = Column(String(100), nullable=False, index=True)
 
     cost = Column(Float, nullable=False)

@@ -5,12 +5,11 @@ from typing import Tuple, Dict, Any
 from fastapi import HTTPException
 from starlette import status
 
-
 from app import schemas
-from app.database.main_models import User, ApiKey, Price
-from app.database.repositories.user_repository import ApiKeyRepository
+from app.database.main_models import User, Price
 from app.database.repositories.price_repository import PriceRepository
-from app.database.repositories.user_price_repository import UserPriceRepository
+from app.database.repositories.user_repository import UserRepository
+
 from app.main_api_utils import get_final_cost
 
 from app.schemas import AnyModelParams
@@ -18,22 +17,15 @@ from app.schemas import AnyModelParams
 
 class GenerationService:
 
-
     def __init__(
             self,
             user: User,
-            api_key: ApiKey,
-            key_repo: ApiKeyRepository,
             price_repo: PriceRepository,
-            user_price_repo: UserPriceRepository,
+            user_repo: UserRepository,
     ):
-
         self.user = user
-        self.api_key = api_key
-        self.key_repo = key_repo
         self.price_repo = price_repo
-        self.user_price_repo = user_price_repo
-
+        self.user_repo = user_repo
 
     async def prepare_generation_task(
             self, model_params: AnyModelParams
@@ -44,7 +36,8 @@ class GenerationService:
         await self._validate_and_get_price(model_name)
         final_cost, prime_cost = await self._calculate_costs(model_params)
 
-        await self._deduct_funds(final_cost)
+        # logger.info(f"Task Cost: {final_cost}. User {self.user.id} Balance: {self.user.balance}")
+        # await self._deduct_funds(final_cost)
 
         task_id = str(uuid.uuid4())
 
@@ -65,9 +58,8 @@ class GenerationService:
         return {
             "_id": task_id,
             "status": "pending",
-            "user_telegram_id": self.user.telegram_id,
+            "user_id": self.user.id,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "api_key_id": self.api_key.id,
             "model": model_params.model_name,
             "params": model_params.dict(),
             "cost": final_cost,
@@ -103,15 +95,14 @@ class GenerationService:
             model_name=model_name,
             model_params=model_params.dict(),
             price_repo=self.price_repo,
-            user_price_repo=self.user_price_repo
         )
 
         return final_cost, prime_cost
 
     async def _deduct_funds(self, amount: float):
 
-        was_deducted = await self.key_repo.deduct_from_balance(
-            key_id=self.api_key.id, amount=amount
+        was_deducted = await self.user_repo.deduct_balance(
+            user_id=self.user.id, amount=amount
         )
 
         if not was_deducted:

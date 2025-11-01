@@ -12,8 +12,8 @@ class PromptMixin(BaseModel):
 
 
 
-class SoraParams(BaseModelParams, PromptMixin):
-    model_name: Literal["sora"]
+class Sora2Params(BaseModelParams, PromptMixin):
+    model_name: Literal["sora-2"]
 
     image_url: Optional[str] = Field(
         None,
@@ -29,12 +29,30 @@ class SoraParams(BaseModelParams, PromptMixin):
     duration: Literal[10, 15] = Field(10, description="Длительность видео в секундах. (10 или 15)")
 
 
+class Veo3QualityParams(BaseModelParams, PromptMixin):
+    model_name: Literal["veo-3-quality"]
+    image_url: Optional[str] = Field(None, description='URL / Base 64 отправляемой картинки')
+    translate: bool = False
+    aspect_ratio: Optional[Literal["16:9", "9:16"]] = Field(
+        None,
+        description="Соотношение сторон для генерируемого видео. Если не указано, будет выбрано значение по умолчанию."
+    )
 
+class Veo3FastParams(BaseModelParams, PromptMixin):
+    model_name: Literal["veo-3-fast"]
+    image_url: Optional[str] = Field(None, description='URL / Base 64 отправляемой картинки')
+    translate: bool = False
+    aspect_ratio: Optional[Literal["16:9", "9:16"]] = Field(
+        None,
+        description="Соотношение сторон для генерируемого видео. Если не указано, будет выбрано значение по умолчанию."
+    )
 
 
 AnyModelParams = Annotated[
     Union[
-        SoraParams
+        Sora2Params,
+        Veo3FastParams,
+        Veo3QualityParams
     ],
     Field(discriminator="model_name")
 ]

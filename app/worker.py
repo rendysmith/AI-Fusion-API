@@ -9,10 +9,13 @@ from aiobotocore.session import get_session
 from aiohttp import ClientTimeout
 
 from app.database.engine import async_session_factory
+from app.database.redis_db import get_redis_client
 from app.database.repositories.analytics_repository import AnalyticsRepository
+from app.database.repositories.circuit_breaker_repository import CircuitBreakerRepository
 from app.database.repositories.task_repository import TaskRepository
-from app.database.repositories.user_repository import ApiKeyRepository
-from app.services.providers import example_provider
+from app.database.repositories.user_repository import UserRepository
+from app.services.providers import kie_ai_provider, openai_provider
+from app.services.s3_uploader import S3UploaderService
 from app.settings import settings
 
 logging.basicConfig(
@@ -26,20 +29,25 @@ MAX_CONCURRENT_TASKS = settings.WORKER_MAX_CONCURRENT_TASKS
 
 logger = logging.getLogger(__name__)
 
-MODEL_PROCESSORS = {
-    'image-model': example_provider.generate_image,
-    'video-model': example_provider.generate_video,
-    'random-model-one': example_provider.generate,
-    'random-model-two': example_provider.generate
+MODEL_PROCESSORS_PRIMARY = {
+    'sora-2': kie_ai_provider.generate_sora_kie_ai_video,
+    'veo-3-quality': kie_ai_provider.generate_veo_kie_ai_video,
+    'veo-3-fast': kie_ai_provider.generate_veo_kie_ai_video
+}
+
+
+MODEL_PROCESSORS_FALLBACK = {
+    'sora-2': openai_provider.generate_sora_openai_video,
 }
 
 
 async def process_task(session: aiohttp.ClientSession,
-                       s3_client: aiobotocore.client.BaseClient,
                        task_data: dict,
                        task_repo: TaskRepository,
-                       key_repo: ApiKeyRepository,
-                       analytics_repo: AnalyticsRepository
+                       analytics_repo: AnalyticsRepository,
+                       user_repo: UserRepository,
+                       s3_uploader: S3UploaderService,
+                       circuit_breaker: CircuitBreakerRepository
                        ):
     task_id = task_data["_id"]
     logger.info(f"TaskID: {task_id} | Начинаю обработку.")
@@ -52,16 +60,53 @@ async def process_task(session: aiohttp.ClientSession,
 
     try:
 
-        processor = MODEL_PROCESSORS.get(model_name)
-        if not processor:
-            raise ValueError(f"Не найден обработчик для модели '{model_name}'")
+        is_circuit_open = await circuit_breaker.is_open(model_name)
 
-        result_data = await processor(
-            session=session,
-            s3_client=s3_client,
-            params=params,
-            task_id=task_id
-        )
+        if is_circuit_open:
+
+            logger.warning(f"TaskID: {task_id} | Цепь разорвана. Использую Fallback (OpenAI).")
+            processor = MODEL_PROCESSORS_FALLBACK.get(model_name)
+            if not processor:
+                raise ValueError(f"Не найден Fallback-обработчик для {model_name}")
+
+            result_data = await processor(
+                session=session,
+                params=params,
+                task_id=task_id,
+                s3_uploader=s3_uploader
+            )
+
+        else:
+
+            processor = MODEL_PROCESSORS_PRIMARY.get(model_name)
+            if not processor:
+                raise ValueError(f"Не найден Primary-обработчик для {model_name}")
+
+            try:
+
+                result_data = await processor(
+                    session=session,
+                    params=params,
+                    task_id=task_id,
+                    s3_uploader=s3_uploader,
+                    circuit_breaker=circuit_breaker,
+                    model_name=model_name
+                )
+            except Exception as error:
+
+                logger.warning(f"TaskID: {task_id} | Primary (Kie AI) упал. Пробую Fallback (OpenAI)...")
+
+
+                fallback_processor = MODEL_PROCESSORS_FALLBACK.get(model_name)
+                if not fallback_processor:
+                    raise ValueError(f"Kie AI упал, но Fallback-обработчик не найден!")
+
+                result_data = await fallback_processor(
+                    session=session,
+                    params=params,
+                    task_id=task_id,
+                    s3_uploader=s3_uploader
+                )
 
         await task_repo.complete_task(task_id, result_data)
         logger.info(f"TaskID: {task_id} | Задача успешно завершена.")
@@ -71,8 +116,7 @@ async def process_task(session: aiohttp.ClientSession,
             created_time = datetime.fromisoformat(task_data["created_at"])
             await analytics_repo.log_and_update_stats_on_completion(
                 task_id=task_data["_id"],
-                user_telegram_id=task_data["user_telegram_id"],
-                api_key_id=task_data["api_key_id"],
+                user_id=task_data["user_id"],
                 model_name=task_data["model"],
                 cost=task_data.get("cost", 0.0),
                 prime_cost=task_data.get("prime_cost", 0.0),
@@ -86,26 +130,26 @@ async def process_task(session: aiohttp.ClientSession,
     except Exception as e:
         logger.error(f"TaskID: {task_id} | Ошибка при обработке: {e}", exc_info=True)
         await task_repo.fail_task(task_id, str(e))
-        await refund_on_failure(task_data, key_repo)
+        await refund_on_failure(task_data, user_repo)
 
 
+async def refund_on_failure(task: dict, user_repo: UserRepository):
 
-async def refund_on_failure(task: dict, key_repo: ApiKeyRepository):
-    key_id_to_refund = task.get("api_key_id")
+    user_id_to_refund = task.get("user_id")
     cost_to_refund = task.get("cost")
     task_id = task["_id"]
 
-    if key_id_to_refund and cost_to_refund is not None:
+    if user_id_to_refund and cost_to_refund is not None and cost_to_refund > 0:
         try:
-            logger.warning(f"TaskID: {task_id} | Возврат {cost_to_refund} на ключ ID: {key_id_to_refund}")
-            await key_repo.refund_balance(key_id=key_id_to_refund, amount=cost_to_refund)
+            logger.warning(f"TaskID: {task_id} | Возврат {cost_to_refund} пользователю ID: {user_id_to_refund}")
+            await user_repo.refund_balance(user_id=user_id_to_refund, amount=cost_to_refund)
             logger.info(f"TaskID: {task_id} | Возврат выполнен.")
         except Exception as refund_error:
             logger.critical(
-                f"TaskID: {task_id} | Ошибка возврата! Ключ ID: {key_id_to_refund}, Сумма: {cost_to_refund}. Ошибка: {refund_error}",
+                f"TaskID: {task_id} | Ошибка возврата! User ID: {user_id_to_refund}, Сумма: {cost_to_refund}. Ошибка: {refund_error}",
                 exc_info=True)
     else:
-        logger.error(f"TaskID: {task_id} | Невозможно выполнить возврат: нет api_key_id или cost.")
+        logger.error(f"TaskID: {task_id} | Невозможно выполнить возврат: нет user_id или cost.")
 
 
 async def handle_message(
@@ -114,8 +158,9 @@ async def handle_message(
     http_session: aiohttp.ClientSession,
     s3_client: aiobotocore.client.BaseClient,
     task_repo: TaskRepository,
-    key_repo: ApiKeyRepository,
-    analytics_repo: AnalyticsRepository
+    analytics_repo: AnalyticsRepository,
+    user_repo: UserRepository,
+    circuit_breaker_repo: CircuitBreakerRepository
 ):
 
     task_data = None
@@ -123,19 +168,23 @@ async def handle_message(
 
     try:
         task_data = json.loads(message['Body'])
+
+        s3_uploader = S3UploaderService(s3_client)
+
         task_id = task_data.get("_id", "unknown_id")
         logger.info(f"TaskID: {task_id} | Задача получена из очереди.")
 
         await process_task(
             session=http_session,
-            s3_client=s3_client,
+            s3_uploader=s3_uploader,
             task_data=task_data,
             task_repo=task_repo,
-            key_repo=key_repo,
-            analytics_repo=analytics_repo
+            analytics_repo=analytics_repo,
+            user_repo=user_repo,
+            circuit_breaker=circuit_breaker_repo
         )
 
-        # ЕСЛИ УСПЕШНО - УДАЛЯЕМ СООБЩЕНИЕ ИЗ ОЧЕРЕДI
+
         await sqs_client.delete_message(
             QueueUrl=settings.YANDEX_QUEUE_URL,
             ReceiptHandle=receipt_handle
@@ -153,8 +202,11 @@ async def handle_message(
 
 async def main():
     task_repo = TaskRepository(async_session_factory)
-    key_repo = ApiKeyRepository(async_session_factory)
     analytics_repo = AnalyticsRepository(async_session_factory)
+    user_repo = UserRepository(async_session_factory)
+
+    redis_client = get_redis_client()
+    circuit_breaker_repo = CircuitBreakerRepository(redis_client)
 
     logger.info(f"Воркер {WORKER_ID} запущен. Максимум одновременных задач: {MAX_CONCURRENT_TASKS}")
 
@@ -175,8 +227,8 @@ async def main():
                 'sqs',
                 region_name=settings.YANDEX_QUEUE_REGION,
                 endpoint_url=settings.YANDEX_QUEUE_ENDPOINT,
-                aws_access_key_id=settings.YANDEX_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.YANDEX_SECRET_ACCESS_KEY
+                aws_access_key_id=settings.YANDEX_SQS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.YANDEX_SQS_SECRET_ACCESS_KEY
             ) as sqs_client:
 
                 logger.info(" [*] Ожидание задач из YMQS. Для выхода нажмите CTRL+C")
@@ -199,8 +251,14 @@ async def main():
                             for message in messages:
                                 tasks.append(
                                     handle_message(
-                                        message, sqs_client, http_session, s3_client,
-                                        task_repo, key_repo, analytics_repo
+                                        message=message,
+                                        sqs_client=sqs_client,
+                                        http_session=http_session,
+                                        s3_client=s3_client,
+                                        task_repo=task_repo,
+                                        analytics_repo=analytics_repo,
+                                        user_repo=user_repo,
+                                        circuit_breaker_repo=circuit_breaker_repo
                                     )
                                 )
                             await asyncio.gather(*tasks)

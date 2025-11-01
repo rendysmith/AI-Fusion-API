@@ -1,19 +1,19 @@
 .env
+.env.local
+.env.production
 
+*.json
 
 __pycache__/
 *.pyc
-
 
 venv/
 .venv/
 env/
 .env/
 
-
 .idea/
 .vscode/
-
 
 *.log
 *.tmp

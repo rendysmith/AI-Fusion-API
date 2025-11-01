@@ -1,49 +1,31 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, BigInteger, DECIMAL, DateTime, func, Boolean, \
-    UniqueConstraint
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy import Column, String, Float, BigInteger, DECIMAL, Boolean, Integer, DateTime, func
 
-Base = declarative_base()
+from app.database.base import Base
 
 
 class User(Base):
     __tablename__ = "users"
-    telegram_id = Column(BigInteger, primary_key=True, index=True)
 
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    firebase_uid = Column(String(128), unique=True, index=True, nullable=False)
+    email = Column(String(255), unique=True, index=True, nullable=True)
+    telegram_id = Column(BigInteger, unique=True, index=True, nullable=True)
     coefficient = Column(Float, default=1.0, nullable=False)
 
-
-    keys = relationship("ApiKey", back_populates="owner")
-    custom_prices = relationship("UserPrice", back_populates="user", cascade="all, delete-orphan")
-
-
-class UserPrice(Base):
-    __tablename__ = "user_prices"
-
-    id = Column(Integer, primary_key=True)
-    user_telegram_id = Column(BigInteger, ForeignKey("users.telegram_id"), nullable=False, index=True)
-    model_name = Column(String(50), ForeignKey("prices.model_name"), nullable=False, index=True)
-    custom_cost = Column(DECIMAL(precision=15, scale=6), nullable=False)
-
-
-    user = relationship("User", back_populates="custom_prices")
-    model = relationship("Price")
-
-
-
-
-    __table_args__ = (UniqueConstraint('user_telegram_id', 'model_name', name='_user_model_uc'),)
-
-
-class ApiKey(Base):
-    __tablename__ = "api_keys"
-
-    id = Column(Integer, primary_key=True, index=True)
-    key_value = Column(String(100), unique=True, index=True, nullable=False)
     balance = Column(DECIMAL(precision=15, scale=6), default=0.0, nullable=False)
 
-    owner_id = Column(BigInteger, ForeignKey("users.telegram_id"), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
 
-    owner = relationship("User", back_populates="keys")
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False
+    )
 
 
 

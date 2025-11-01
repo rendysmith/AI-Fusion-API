@@ -1,56 +1,68 @@
-version: '3.8'
-
 services:
   db:
-    image: mysql:8.0
-    container_name: main_api_db
-    command: --default-authentication-plugin=mysql_native_password
+    image: postgres:15-alpine
+    container_name: local_postgres_db
     restart: always
     volumes:
-      - mysql_data:/var/lib/mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${DB_NAME}
-      MYSQL_USER: ${DB_USER}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
+      - postgres_data:/var/lib/postgresql/data
+    env_file:
+      - .env.local
     ports:
-      - "3306:3306"
+      - "5433:5432"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${DB_USER}", "-p${DB_PASSWORD}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 5
 
 
-  mongo:
-    image: mongo:latest
-    container_name: main_api_mongo
-    restart: always
-    volumes:
-      - mongo_data:/data/db
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
-    ports:
-      - "27017:27017"
-
-  rabbitmq:
-    image: rabbitmq:3-management-alpine
-    container_name: nexus_rabbitmq
+  redis:
+    image: redis:7-alpine
+    container_name: local_redis
     restart: always
     ports:
-      - "5672:5672"
-      - "15672:15672"
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      - "6379:6379"
     volumes:
-      - rabbitmq_data:/var/lib/rabbitmq/
+      - redis_data:/data
+    env_file:
+      - .env.local
     healthcheck:
-      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+
+  minio:
+    image: minio/minio
+    container_name: local_minio_s3
+    command: server /data --console-address ":9001"
+    restart: always
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    env_file:
+      - .env.local
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+  elasticmq:
+    image: softwaremill/elasticmq:latest
+    container_name: local_elasticmq_sqs
+    restart: always
+    ports:
+      - "9324:9324"
+      - "9325:9325"
+    volumes:
+      - ./elasticmq.conf:/opt/elasticmq.conf
+    command: -Dconfig.file=/opt/elasticmq.conf
+
 
   api:
     build: .
@@ -58,14 +70,19 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - ./app:/app/app
+      - ./firebase-service-account.json:/app/firebase-service-account.json
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - .env.local
     depends_on:
       db:
         condition: service_healthy
-      mongo:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      elasticmq:
         condition: service_started
 
 
@@ -74,15 +91,21 @@ services:
     container_name: main_api_worker
     volumes:
       - ./app:/app/app
+      - ./firebase-service-account.json:/app/firebase-service-account.json
     env_file:
-      - .env
+      - .env.local
+    command: python -m app.worker
     depends_on:
       db:
         condition: service_healthy
-      mongo:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      elasticmq:
         condition: service_started
 
-
 volumes:
-  mysql_data:
-  mongo_data:
+  postgres_data:
+  redis_data:
+  minio_data:

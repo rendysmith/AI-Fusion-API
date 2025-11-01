@@ -4,7 +4,7 @@ from typing import Optional, Dict, Any, List
 from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from app.database.analytics_models import DailySystemStats, UserKeyModelStats, CompletedTaskLog
+from app.database.analytics_models import DailySystemStats, UserModelStats, CompletedTaskLog
 
 
 class AnalyticsRepository:
@@ -12,14 +12,14 @@ class AnalyticsRepository:
         self.session_factory = session_factory
 
     async def log_and_update_stats_on_completion(
-            self, task_id: str, user_telegram_id: int, api_key_id: int, model_name: str,
+            self, task_id: str, user_id: int, model_name: str,
             cost: float, prime_cost: float, created_at: datetime
     ):
-        """Главный метод: атомарно пишет в три таблицы после завершения задачи."""
+
         async with self.session_factory() as session:
 
             log_entry = CompletedTaskLog(
-                task_mongo_id=task_id, user_telegram_id=user_telegram_id, api_key_id=api_key_id,
+                task_mongo_id=task_id, user_id=user_id,
                 model_name=model_name, cost=cost, prime_cost=prime_cost, created_at=created_at
             )
             session.add(log_entry)
@@ -42,30 +42,28 @@ class AnalyticsRepository:
             )
             await session.execute(stmt_daily_upsert)
 
-            stmt_user_key = pg_insert(UserKeyModelStats).values(
-                user_telegram_id=user_telegram_id, api_key_id=api_key_id, model_name=model_name,
+            stmt_user_model = pg_insert(UserModelStats).values(
+                user_id = user_id, model_name = model_name,
                 total_tasks_completed=1, total_spending=cost
             )
-            stmt_user_key_upsert = stmt_user_key.on_conflict_do_update(
-                index_elements=['user_telegram_id', 'api_key_id', 'model_name'],
+            stmt_user_model_upsert = stmt_user_model.on_conflict_do_update(
+                index_elements = ['user_id', 'model_name'],
                 set_={
-                    'total_tasks_completed': UserKeyModelStats.total_tasks_completed + 1,
-                    'total_spending': UserKeyModelStats.total_spending + stmt_user_key.excluded.total_spending
+                    'total_tasks_completed': UserModelStats.total_tasks_completed + 1,
+                    'total_spending': UserModelStats.total_spending + stmt_user_model.excluded.total_spending
                 }
             )
-            await session.execute(stmt_user_key_upsert)
+            await session.execute(stmt_user_model_upsert)
 
             await session.commit()
 
 
-    async def get_detailed_activity(self, start_time: datetime, end_time: datetime, api_key_id: int = None):
-        """Получает детальную активность за период, опционально фильтруя по ключу."""
+    async def get_detailed_activity(self, start_time: datetime, end_time: datetime):
+
         async with self.session_factory() as session:
             stmt = select(CompletedTaskLog).where(
                 CompletedTaskLog.created_at.between(start_time, end_time)
             )
-            if api_key_id:
-                stmt = stmt.where(CompletedTaskLog.api_key_id == api_key_id)
 
             result = await session.execute(stmt)
             return result.scalars().all()
@@ -82,9 +80,9 @@ class AnalyticsRepository:
     async def get_overall_model_usage(self):
         async with self.session_factory() as session:
             stmt = select(
-                UserKeyModelStats.model_name,
-                func.sum(UserKeyModelStats.total_tasks_completed).label('usage_count')
-            ).group_by(UserKeyModelStats.model_name).order_by(func.sum(UserKeyModelStats.total_tasks_completed).desc())
+                UserModelStats.model_name,
+                func.sum(UserModelStats.total_tasks_completed).label('usage_count')
+            ).group_by(UserModelStats.model_name).order_by(func.sum(UserModelStats.total_tasks_completed).desc())
             result = await session.execute(stmt)
             return result.all()
 
@@ -96,7 +94,8 @@ class AnalyticsRepository:
             result = await session.execute(stmt)
             return result.scalars().all()
 
-    async def create_usage_report(self, start_date: date, end_date: date, key_id: Optional[int]) -> Dict[str, Any]:
+
+    async def create_usage_report(self, start_date: date, end_date: date) -> Dict[str, Any]:
         async with self.session_factory() as session:
 
             start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
@@ -104,8 +103,6 @@ class AnalyticsRepository:
 
 
             where_clause = [CompletedTaskLog.created_at.between(start_dt, end_dt)]
-            if key_id is not None:
-                where_clause.append(CompletedTaskLog.api_key_id == key_id)
 
 
             profit_stmt = select(
@@ -129,19 +126,20 @@ class AnalyticsRepository:
                 "model_usage": model_usage_result
             }
 
-    async def get_user_summary(self, telegram_id: int) -> Dict[str, Any]:
+    async def get_user_summary(self, user_id: int) -> Dict[str, Any]:
         async with self.session_factory() as session:
             stmt = select(
-                func.sum(UserKeyModelStats.total_spending).label("total_spending"),
-                func.sum(UserKeyModelStats.total_tasks_completed).label("total_tasks")
-            ).where(UserKeyModelStats.user_telegram_id == telegram_id)
+                func.sum(UserModelStats.total_spending).label("total_spending"),
+                func.sum(UserModelStats.total_tasks_completed).label("total_tasks")
+            ).where(UserModelStats.user_id == user_id)
 
             summary = (await session.execute(stmt)).first()
 
             model_usage_stmt = select(
-                UserKeyModelStats.model_name,
-                func.sum(UserKeyModelStats.total_tasks_completed).label("count")
-            ).where(UserKeyModelStats.user_telegram_id == telegram_id).group_by(UserKeyModelStats.model_name)
+                UserModelStats.model_name,
+                func.sum(UserModelStats.total_tasks_completed).label("count")
+            ).where(UserModelStats.user_id == user_id).group_by(UserModelStats.model_name)
+
 
             model_usage = (await session.execute(model_usage_stmt)).all()
 
@@ -155,13 +153,9 @@ class AnalyticsRepository:
             self,
             start_date: date,
             end_date: date,
-            user_telegram_id: Optional[int] = None,
-            api_key_id: Optional[int] = None,
+            user_id: Optional[int] = None,
             model_name: Optional[str] = None
     ) -> Dict[str, Any]:
-        """
-        Строит детализированный отчет по логам с гибкими фильтрами.
-        """
         async with self.session_factory() as session:
             start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
             end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
@@ -170,10 +164,8 @@ class AnalyticsRepository:
             query = select(CompletedTaskLog).where(
                 CompletedTaskLog.created_at.between(start_dt, end_dt)
             )
-            if user_telegram_id:
-                query = query.where(CompletedTaskLog.user_telegram_id == user_telegram_id)
-            if api_key_id:
-                query = query.where(CompletedTaskLog.api_key_id == api_key_id)
+            if user_id:
+                query = query.where(CompletedTaskLog.user_id == user_id)
             if model_name:
                 query = query.where(CompletedTaskLog.model_name == model_name)
 
@@ -210,13 +202,8 @@ class AnalyticsRepository:
 
     async def get_daily_activity(
             self,
-            user_telegram_id: Optional[int] = None,
-            api_key_id: Optional[int] = None
+            user_id: Optional[int] = None,
     ) -> List:
-        """
-        Собирает агрегированные данные по дням для построения графика активности.
-        Возвращает данные за последние 30 дней.
-        """
         async with self.session_factory() as session:
 
             end_date = date.today()
@@ -231,55 +218,11 @@ class AnalyticsRepository:
                 .where(func.date(CompletedTaskLog.created_at).between(start_date, end_date))
             )
 
-
-            if user_telegram_id:
-                stmt = stmt.where(CompletedTaskLog.user_telegram_id == user_telegram_id)
-            if api_key_id:
-                stmt = stmt.where(CompletedTaskLog.api_key_id == api_key_id)
-
+            if user_id:
+                stmt = stmt.where(CompletedTaskLog.user_id == user_id)
 
             stmt = stmt.group_by(func.date(CompletedTaskLog.created_at)).order_by(
                 func.date(CompletedTaskLog.created_at).asc())
-
-            result = await session.execute(stmt)
-            return result.all()
-
-    async def get_key_summary(self, api_key_id: int) -> Dict[str, Any]:
-        """
-        Собирает сводную статистику по одному ключу из агрегированной таблицы.
-        """
-        async with self.session_factory() as session:
-
-            summary_stmt = select(
-                func.sum(UserKeyModelStats.total_spending).label("total_spending"),
-                func.sum(UserKeyModelStats.total_tasks_completed).label("total_tasks_completed")
-            ).where(UserKeyModelStats.api_key_id == api_key_id)
-            summary_result = (await session.execute(summary_stmt)).first()
-
-
-            model_usage_stmt = select(
-                UserKeyModelStats.model_name.label("model"),
-                func.sum(UserKeyModelStats.total_tasks_completed).label("count")
-            ).where(UserKeyModelStats.api_key_id == api_key_id).group_by(UserKeyModelStats.model_name)
-            model_usage_result = (await session.execute(model_usage_stmt)).all()
-
-            return {
-                "total_spending": summary_result.total_spending or 0.0,
-                "total_tasks_completed": summary_result.total_tasks_completed or 0,
-                "model_usage": model_usage_result
-            }
-
-    async def get_debit_transactions_for_key(self, api_key_id: int) -> List:
-        """
-        Получает историю списаний (debit) для ключа из детального лога.
-        """
-        async with self.session_factory() as session:
-            stmt = select(
-                CompletedTaskLog.created_at,
-                CompletedTaskLog.cost,
-                CompletedTaskLog.task_mongo_id,
-                CompletedTaskLog.model_name
-            ).where(CompletedTaskLog.api_key_id == api_key_id).order_by(CompletedTaskLog.created_at.desc())
 
             result = await session.execute(stmt)
             return result.all()
