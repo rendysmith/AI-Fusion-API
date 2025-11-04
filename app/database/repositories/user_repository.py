@@ -1,3 +1,6 @@
+from decimal import Decimal
+from typing import Optional
+
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
@@ -84,8 +87,7 @@ class UserRepository(BaseRepository):
             await session.execute(stmt)
             await session.commit()
 
-    async def deduct_balance(self, user_id: int, amount: float) -> bool:
-
+    async def deduct_balance(self, user_id: int, amount: float) -> Optional[Decimal]:
         async with self.session_factory() as session:
             stmt = (
                 update(User)
@@ -94,11 +96,14 @@ class UserRepository(BaseRepository):
                     User.balance >= amount
                 )
                 .values(balance=User.balance - amount)
+                .returning(User.balance)
             )
-            result = await session.execute(stmt)
+
+            new_balance = await session.scalar(stmt)
+
             await session.commit()
 
-            return result.rowcount > 0
+            return new_balance
 
     async def refund_balance(self, user_id: int, amount: float):
 

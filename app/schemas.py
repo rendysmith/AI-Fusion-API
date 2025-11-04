@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Literal, Optional, Any, Annotated, Union
+from typing import List, Literal, Optional, Any, Annotated, Union, Dict
 
 from pydantic import BaseModel, Field
 
@@ -63,6 +63,7 @@ class GenerateRequest(BaseModel):
 class GenerateAcceptedResponse(BaseModel):
     message: str = "Task accepted for processing"
     task_id: str
+    balance: float
 
 
 TaskStatus = Literal["pending", "processing", "completed", "failed"]
@@ -100,3 +101,32 @@ class UserAnalyticsResponse(BaseModel):
     failed_tasks: int
     model_usage: List[UserStatItem]
     daily_activity: List[DailyActivity]
+
+
+class GenerationResultModel(BaseModel):
+    videoUrl: Optional[str] = None
+    thumbnailUrl: Optional[str] = None
+
+
+class GenerationHistoryItem(BaseModel):
+    task_id: str
+    prompt: Optional[str] = None
+    model: str
+    status: str
+    error: Optional[str] = None
+    created_at: datetime
+    parameters: Optional[Dict[str, Any]] = None
+    result: Optional[GenerationResultModel] = None
+
+
+class GenerationHistoryResponse(BaseModel):
+    generations: List[GenerationHistoryItem]
+    total: int
+    page: int
+    limit: int
+
+
+class UserBalanceResponse(BaseModel):
+    balance: float
+    plan: Optional[str] = None
+    generations_left: Optional[int] = None

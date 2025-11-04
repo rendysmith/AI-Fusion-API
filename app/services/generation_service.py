@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Tuple, Dict, Any
 
+import aiobotocore
 from fastapi import HTTPException
 from starlette import status
 
@@ -14,6 +16,9 @@ from app.main_api_utils import get_final_cost
 
 from app.schemas import AnyModelParams
 
+from app.utils.image_processor import process_and_upload_images
+from app.settings import settings
+
 
 class GenerationService:
 
@@ -22,30 +27,40 @@ class GenerationService:
             user: User,
             price_repo: PriceRepository,
             user_repo: UserRepository,
+            s3_client: aiobotocore.client.BaseClient
     ):
         self.user = user
         self.price_repo = price_repo
         self.user_repo = user_repo
+        self.s3_client = s3_client
 
     async def prepare_generation_task(
             self, model_params: AnyModelParams
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[str, Dict[str, Any], Decimal]:
 
         model_name = model_params.model_name
 
-        await self._validate_and_get_price(model_name)
-        final_cost, prime_cost = await self._calculate_costs(model_params)
+        processed_params = await process_and_upload_images(
+            model_params=model_params,
+            s3_client=self.s3_client,
+            bucket_name=settings.YANDEX_BUCKET_NAME,
+            endpoint_url=settings.YANDEX_STORAGE_ENDPOINT
+        )
 
-        # logger.info(f"Task Cost: {final_cost}. User {self.user.id} Balance: {self.user.balance}")
-        # await self._deduct_funds(final_cost)
+
+        await self._validate_and_get_price(model_name)
+        final_cost, prime_cost = await self._calculate_costs(processed_params)
+
+
+        new_balance = await self._deduct_funds(final_cost)
 
         task_id = str(uuid.uuid4())
 
         task_message_body = self._prepare_task_message(
-            task_id, model_params, final_cost, prime_cost
+            task_id, processed_params, final_cost, prime_cost
         )
 
-        return task_id, task_message_body
+        return task_id, task_message_body, new_balance
 
     def _prepare_task_message(
             self,
@@ -99,14 +114,16 @@ class GenerationService:
 
         return final_cost, prime_cost
 
-    async def _deduct_funds(self, amount: float):
+    async def _deduct_funds(self, amount: float) -> Decimal:
 
-        was_deducted = await self.user_repo.deduct_balance(
+        new_balance = await self.user_repo.deduct_balance(
             user_id=self.user.id, amount=amount
         )
 
-        if not was_deducted:
+        if new_balance is None:
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 detail=f"Insufficient funds. Required: {amount}. Please top up your balance.",
             )
+
+        return new_balance

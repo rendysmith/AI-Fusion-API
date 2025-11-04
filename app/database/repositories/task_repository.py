@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import Optional, Dict, Any
-from sqlalchemy import select, update, func
+from typing import Optional, Dict, Any, Tuple, List
+from sqlalchemy import select, update, func, desc
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -90,3 +90,48 @@ class TaskRepository:
             )
             await session.execute(stmt)
             await session.commit()
+
+    async def get_tasks_by_user_id_paginated(
+            self,
+            user_id: int,
+            page: int = 1,
+            limit: int = 20,
+            model_name: Optional[str] = None
+    ) -> Tuple[List[GenerationTask], int]:
+        """
+        Получает список задач для пользователя с пагинацией и общее количество.
+        """
+
+        if page < 1:
+            page = 1
+        if limit < 1:
+            limit = 20
+
+        offset = (page - 1) * limit
+
+        async with self.session_factory() as session:
+
+            where_conditions = [GenerationTask.user_id == user_id]
+            if model_name:
+                where_conditions.append(GenerationTask.model_name == model_name)
+
+            stmt_tasks = (
+                select(GenerationTask)
+                .where(*where_conditions)
+                .order_by(desc(GenerationTask.created_at))
+                .offset(offset)
+                .limit(limit)
+            )
+
+            result_tasks = await session.execute(stmt_tasks)
+            tasks = result_tasks.scalars().all()
+
+            stmt_count = (
+                select(func.count(GenerationTask.id))
+                .where(*where_conditions)
+            )
+
+            result_count = await session.scalar(stmt_count)
+            total = result_count or 0
+
+            return tasks, total

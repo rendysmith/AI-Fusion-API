@@ -176,9 +176,72 @@ async def generate_sora_kie_ai_video(session: aiohttp.ClientSession,
         return {"video_url": permanent_s3_url}
 
     except (KieAiGenerationError, S3UploadServiceError, aiohttp.ClientResponseError) as e:
-        logging.error(f"TaskID: {task_id} | Ошибка Kie AI: {e}. 'Разрываем' цепь.")
 
-        await circuit_breaker.trip(model_name)
+
+        if isinstance(e, S3UploadServiceError):
+            logging.error(f"TaskID: {task_id} | Ошибка S3 Uploader: {e}. Fallback НЕ требуется.")
+
+            raise
+
+        should_trip = False
+
+        status_code = None
+
+        error_type = type(e).__name__
+
+
+        http_error = None
+
+        if isinstance(e, aiohttp.ClientResponseError):
+
+            http_error = e
+
+        elif isinstance(e.__cause__, aiohttp.ClientResponseError):
+
+            http_error = e.__cause__
+
+        if http_error:
+
+            status_code = http_error.status
+
+
+
+            if status_code in [500, 502, 503, 504, 402, 429]:
+                should_trip = True
+
+
+
+
+        elif isinstance(e, KieAiGenerationError) and e.__cause__:
+
+            if isinstance(e.__cause__, (asyncio.TimeoutError, aiohttp.ClientConnectorError, aiohttp.ClientConnectionError)):
+                should_trip = True
+
+                error_type = type(e.__cause__).__name__
+
+
+        if should_trip:
+
+            logging.error(
+
+                f"TaskID: {task_id} | SORA: Kie AI считается 'упавшим' (Статус: {status_code}, Ошибка: {error_type}: {e}). "
+        
+                f"'Разрываем' цепь и пробуем fallback."
+
+            )
+
+            await circuit_breaker.trip(model_name)
+
+        else:
+
+
+            logging.error(
+
+                f"TaskID: {task_id} | SORA: Ошибка Kie AI (Статус: {status_code}, Ошибка: {error_type}: {e}). "
+        
+                f"Fallback НЕ требуется. Задача будет провалена."
+
+            )
 
         raise
 
@@ -310,9 +373,69 @@ async def generate_veo_kie_ai_video(session: aiohttp.ClientSession,
 
     except (VeoGenerationError, S3UploadServiceError, aiohttp.ClientResponseError) as e:
 
-        logging.error(f"TaskID: {task_id} | Ошибка Kie AI для модели {model_name}: {e}. 'Разрываем' цепь.")
 
-        await circuit_breaker.trip(model_name)
+        if isinstance(e, S3UploadServiceError):
+            logging.error(f"TaskID: {task_id} | Ошибка S3 Uploader: {e}. Fallback НЕ требуется.")
+
+            raise
+
+        should_trip = False
+
+        status_code = None
+
+        error_type = type(e).__name__
+
+
+        http_error = None
+
+        if isinstance(e, aiohttp.ClientResponseError):
+
+            http_error = e
+
+        elif isinstance(e.__cause__, aiohttp.ClientResponseError):
+
+            http_error = e.__cause__
+
+        if http_error:
+
+            status_code = http_error.status
+
+
+            if status_code in [500, 502, 503, 504, 402, 429]:
+                should_trip = True
+
+
+
+        elif isinstance(e, VeoGenerationError) and e.__cause__:
+
+            if isinstance(e.__cause__, (asyncio.TimeoutError, aiohttp.ClientConnectorError, aiohttp.ClientConnectionError)):
+                should_trip = True
+
+                error_type = type(e.__cause__).__name__
+
+
+        if should_trip:
+
+            logging.error(
+
+                f"TaskID: {task_id} | VEO: Kie AI считается 'упавшим' (Статус: {status_code}, Ошибка: {error_type}: {e}). "
+        
+                f"'Разрываем' цепь и пробуем fallback."
+
+            )
+
+            await circuit_breaker.trip(model_name)
+
+        else:
+
+
+            logging.error(
+
+                f"TaskID: {task_id} | VEO: Ошибка Kie AI (Статус: {status_code}, Ошибка: {error_type}: {e}). "
+        
+                f"Fallback НЕ требуется. Задача будет провалена."
+
+            )
 
         raise
 

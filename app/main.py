@@ -2,7 +2,7 @@ import json
 import logging
 
 from aiobotocore.session import get_session
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from contextlib import asynccontextmanager
 
 
@@ -26,6 +26,7 @@ from app.services.generation_service import GenerationService
 from app.settings import settings
 
 from app.routers import auth as auth_router
+from app.routers import user as user_router
 
 
 import app.database.main_models
@@ -78,6 +79,7 @@ app = FastAPI(
 
 
 app.include_router(auth_router.router)
+app.include_router(user_router.router)
 
 
 app.add_middleware(
@@ -121,18 +123,22 @@ async def get_task_status(
           tags=["Core Logic"])
 async def generate(
         request_data: schemas.GenerateRequest,
+        request: Request,
         user: User = AUTH_DEPENDENCY,
         price_repo: PriceRepository = Depends(dependencies.get_price_repository),
         user_repo: UserRepository = Depends(dependencies.get_user_repository)
 ):
 
+    s3_client = request.app.state.s3_client
+
     service = GenerationService(
         user=user,
         price_repo=price_repo,
-        user_repo=user_repo
+        user_repo=user_repo,
+        s3_client=s3_client
     )
 
-    task_id, task_message_body = await service.prepare_generation_task(request_data.params)
+    task_id, task_message_body, new_balance = await service.prepare_generation_task(request_data.params)
 
     sqs_client = app.state.sqs_client
 
@@ -141,7 +147,10 @@ async def generate(
         MessageBody=json.dumps(task_message_body, default=str)
     )
 
-    return schemas.GenerateAcceptedResponse(task_id=task_id)
+    return schemas.GenerateAcceptedResponse(
+        task_id=task_id,
+        balance=float(new_balance)
+    )
 
 
 
