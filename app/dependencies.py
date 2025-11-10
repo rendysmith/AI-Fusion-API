@@ -7,7 +7,6 @@ from app.database.redis_db import get_redis_client
 from app.database.repositories.ai_model_repository import AiModelRepository
 from app.database.repositories.analytics_repository import AnalyticsRepository
 from app.database.repositories.circuit_breaker_repository import CircuitBreakerRepository
-from app.database.repositories.price_repository import PriceRepository
 from app.database.engine import async_session_factory
 from app.database.repositories.qr_session_repository import QrSessionRepository
 from app.database.repositories.task_repository import TaskRepository
@@ -60,11 +59,6 @@ async def get_current_user(
 
     except ValueError:
         raise credentials_exception
-
-
-
-def get_price_repository() -> PriceRepository:
-    return PriceRepository(async_session_factory)
 
 
 def get_task_repository() -> TaskRepository:

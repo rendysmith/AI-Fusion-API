@@ -31,3 +31,5 @@ firebase_admin~=7.1.0
 redis
 asyncpg
 qrcode[pil]
+alembic
+psycopg2-binary

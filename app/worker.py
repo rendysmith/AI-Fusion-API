@@ -117,7 +117,7 @@ async def process_task(session: aiohttp.ClientSession,
             await analytics_repo.log_and_update_stats_on_completion(
                 task_id=task_data["_id"],
                 user_id=task_data["user_id"],
-                model_name=task_data["model"],
+                model_slug=task_data["model"],
                 cost=task_data.get("cost", 0.0),
                 prime_cost=task_data.get("prime_cost", 0.0),
                 created_at=created_time

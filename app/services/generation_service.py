@@ -8,8 +8,9 @@ from fastapi import HTTPException
 from starlette import status
 
 from app import schemas
+from app.database.billing_models import AiModel
 from app.database.main_models import User, Price
-from app.database.repositories.price_repository import PriceRepository
+from app.database.repositories.ai_model_repository import AiModelRepository
 from app.database.repositories.user_repository import UserRepository
 
 from app.main_api_utils import get_final_cost
@@ -25,12 +26,12 @@ class GenerationService:
     def __init__(
             self,
             user: User,
-            price_repo: PriceRepository,
+            ai_model_repo: AiModelRepository,
             user_repo: UserRepository,
             s3_client: aiobotocore.client.BaseClient
     ):
         self.user = user
-        self.price_repo = price_repo
+        self.ai_model_repo = ai_model_repo
         self.user_repo = user_repo
         self.s3_client = s3_client
 
@@ -83,9 +84,9 @@ class GenerationService:
             "error": None,
         }
 
-    async def _validate_and_get_price(self, model_name: str) -> Price:
+    async def _validate_and_get_price(self, model_name: str) -> AiModel:
 
-        price_obj = await self.price_repo.get_by_model_name(model_name)
+        price_obj = await self.ai_model_repo.get_by_slug(model_name)
 
         if not price_obj:
             raise HTTPException(
@@ -93,7 +94,7 @@ class GenerationService:
                 detail=f"Price for model '{model_name}' is not set in the admin panel",
             )
 
-        if not price_obj.is_active:
+        if not price_obj.is_available:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Model '{model_name}' is temporarily disabled by the administrator",
@@ -108,8 +109,8 @@ class GenerationService:
         final_cost, prime_cost = await get_final_cost(
             user=self.user,
             model_name=model_name,
-            model_params=model_params.dict(),
-            price_repo=self.price_repo,
+            model_params=model_params.model_dump(),
+            ai_model_repo=self.ai_model_repo,
         )
 
         return final_cost, prime_cost

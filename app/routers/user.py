@@ -52,7 +52,7 @@ async def get_user_generations_history(
             schemas.GenerationHistoryItem(
                 task_id=task.id,
                 prompt=params.get("prompt"),
-                model=task.model_name,
+                model=task.model_slug,
                 status=task.status,
                 error=task.error,
                 created_at=task.created_at,

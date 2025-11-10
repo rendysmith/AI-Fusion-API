@@ -33,28 +33,6 @@ class UserRepository(BaseRepository):
             result = await session.execute(stmt)
             return result.scalars().first()
 
-    async def get_or_create_by_firebase_uid(self, uid: str, email: str | None) -> User:
-
-        async with self.session_factory() as session:
-
-            stmt = select(User).where(User.firebase_uid == uid)
-            result = await session.execute(stmt)
-            user = result.scalars().first()
-
-            if user:
-                return user
-
-
-            user = User(
-                firebase_uid=uid,
-                email=email,
-                coefficient=1.0
-            )
-            session.add(user)
-            await session.commit()
-            await session.refresh(user)
-            return user
-
     async def link_telegram_id(self, user_id: int, telegram_id: int) -> User:
 
         async with self.session_factory() as session:
@@ -65,20 +43,6 @@ class UserRepository(BaseRepository):
             result = await session.execute(stmt)
             await session.commit()
             return result.scalars().one()
-
-    async def create_user_for_telegram(self, uid: str, email: str, telegram_id: int) -> User:
-
-        async with self.session_factory() as session:
-            new_user = User(
-                firebase_uid=uid,
-                email=email,
-                telegram_id=telegram_id,
-                coefficient=1.0
-            )
-            session.add(new_user)
-            await session.commit()
-            await session.refresh(new_user)
-            return new_user
 
     async def link_firebase_uid(self, user_id: int, uid: str, email: str):
 

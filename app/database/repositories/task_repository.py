@@ -98,9 +98,6 @@ class TaskRepository:
             limit: int = 20,
             model_name: Optional[str] = None
     ) -> Tuple[List[GenerationTask], int]:
-        """
-        Получает список задач для пользователя с пагинацией и общее количество.
-        """
 
         if page < 1:
             page = 1
