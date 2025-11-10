@@ -98,8 +98,8 @@ async def get_user_profile(
         uid=user.firebase_uid,
         email=user.email,
         username=user.username,
-        display_name=user.displayName,
-        photo_url=user.photoURL,
+        display_name=user.display_name,
+        photo_url=user.photo_url,
         balance=float(user.balance),
         current_plan=plan,
         subscription=sub,
@@ -108,7 +108,7 @@ async def get_user_profile(
     )
 
 
-# --- НОВЫЙ ЭНДПОИНТ: PUT /user/profile ---
+
 @router.put("/profile", response_model=schemas.UserProfileResponse)
 async def create_or_update_user_profile(
         payload: schemas.UserProfileUpdateRequest,
@@ -156,8 +156,8 @@ async def create_or_update_user_profile(
         uid=user.firebase_uid,
         email=user.email,
         username=user.username,
-        display_name=user.displayName,
-        photo_url=user.photoURL,
+        display_name=user.display_name,
+        photo_url=user.photo_url,
         balance=float(user.balance),
         current_plan=plan,
         subscription=sub,

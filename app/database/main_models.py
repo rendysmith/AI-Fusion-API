@@ -10,8 +10,8 @@ class User(Base):
     firebase_uid = Column(String(128), unique=True, index=True, nullable=False)
     email = Column(String(255), unique=True, index=True, nullable=True)
     username = Column(String(30), unique=True, index=True, nullable=True)
-    displayName = Column(String(100), nullable=True)
-    photoURL = Column(String(255), nullable=True)
+    display_name = Column(String(100), nullable=True)
+    photo_url = Column(String(255), nullable=True)
     telegram_id = Column(BigInteger, unique=True, index=True, nullable=True)
     coefficient = Column(Float, default=1.0, nullable=False)
 
