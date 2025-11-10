@@ -3,7 +3,7 @@ import re
 from datetime import datetime
 from typing import List, Literal, Optional, Any, Annotated, Union, Dict
 
-from pydantic import BaseModel, Field, validator, field_validator, ConfigDict
+from pydantic import BaseModel, Field, validator, field_validator, ConfigDict, field_serializer
 
 
 class BaseModelParams(BaseModel):
@@ -346,10 +346,25 @@ class SubscriptionPlanResponse(SubscriptionPlanBase):
     created_at: datetime
     updated_at: datetime
 
-    @classmethod
-    @field_validator('is_active', mode='before')
+
+    @field_serializer('is_active')
     def serialize_is_active(self, value: bool) -> int:
-        """Конвертирует True -> 1, False -> 0"""
         return 1 if value else 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+
+class PlanModelAccessBase(BaseModel):
+    plan_id: int
+    model_id: int
+    generation_limit: Optional[int] = None
+
+class PlanModelAccessCreate(PlanModelAccessBase):
+    pass 
+
+class PlanModelAccessResponse(PlanModelAccessBase):
+    id: int
+    created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

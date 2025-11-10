@@ -30,6 +30,7 @@ from app.routers import user as user_router
 from app.routers import ai_models as ai_models_router
 from app.routers import templates as templates_router
 from app.routers import subscription_plans as plans_router
+from app.routers import plan_access as plan_access_router
 
 
 import app.database.main_models
@@ -90,6 +91,7 @@ app.include_router(ai_models_router.admin_router)
 app.include_router(templates_router.router)
 app.include_router(templates_router.admin_router)
 app.include_router(plans_router.admin_router)
+app.include_router(plan_access_router.admin_router)
 
 
 app.add_middleware(

@@ -8,6 +8,7 @@ from app.database.repositories.ai_model_repository import AiModelRepository
 from app.database.repositories.analytics_repository import AnalyticsRepository
 from app.database.repositories.circuit_breaker_repository import CircuitBreakerRepository
 from app.database.engine import async_session_factory
+from app.database.repositories.plan_access_repository import PlanAccessRepository
 from app.database.repositories.plan_repository import SubscriptionPlanRepository
 from app.database.repositories.qr_session_repository import QrSessionRepository
 from app.database.repositories.task_repository import TaskRepository
@@ -129,3 +130,7 @@ def get_template_repository() -> TemplateRepository:
 
 def get_subscription_plan_repository() -> SubscriptionPlanRepository:
     return SubscriptionPlanRepository(async_session_factory)
+
+
+def get_plan_access_repository() -> PlanAccessRepository:
+    return PlanAccessRepository(async_session_factory)
