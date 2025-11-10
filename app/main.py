@@ -140,7 +140,8 @@ async def generate(
         request: Request,
         user: User = AUTH_DEPENDENCY,
         ai_model_repo: AiModelRepository = Depends(dependencies.get_ai_model_repository),
-        user_repo: UserRepository = Depends(dependencies.get_user_repository)
+        user_repo: UserRepository = Depends(dependencies.get_user_repository),
+        task_repo: TaskRepository = Depends(dependencies.get_task_repository)
 ):
 
     s3_client = request.app.state.s3_client
@@ -149,7 +150,8 @@ async def generate(
         user=user,
         ai_model_repo=ai_model_repo,
         user_repo=user_repo,
-        s3_client=s3_client
+        s3_client=s3_client,
+        task_repo=task_repo
     )
 
     task_id, task_message_body, new_balance = await service.prepare_generation_task(request_data.params)
