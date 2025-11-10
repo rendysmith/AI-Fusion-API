@@ -28,6 +28,7 @@ from app.settings import settings
 from app.routers import auth as auth_router
 from app.routers import user as user_router
 from app.routers import ai_models as ai_models_router
+from app.routers import templates as templates_router
 
 
 import app.database.main_models
@@ -84,6 +85,9 @@ app.include_router(auth_router.router)
 app.include_router(user_router.router)
 app.include_router(ai_models_router.router)
 app.include_router(ai_models_router.admin_router)
+
+app.include_router(templates_router.router)
+app.include_router(templates_router.admin_router)
 
 
 app.add_middleware(

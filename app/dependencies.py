@@ -11,6 +11,7 @@ from app.database.engine import async_session_factory
 from app.database.repositories.qr_session_repository import QrSessionRepository
 from app.database.repositories.task_repository import TaskRepository
 from app.database.repositories.telegram_token_repository import TelegramTokenRepository
+from app.database.repositories.template_repository import TemplateRepository
 
 from app.database.repositories.user_repository import UserRepository
 from app.services.firebase_service import verify_firebase_token
@@ -119,3 +120,7 @@ async def get_current_admin_user(
             detail="Access forbidden: requires admin privileges."
         )
     return user
+
+
+def get_template_repository() -> TemplateRepository:
+    return TemplateRepository(async_session_factory)

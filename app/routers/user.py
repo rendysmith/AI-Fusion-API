@@ -165,3 +165,11 @@ async def create_or_update_user_profile(
         subscription=sub,
         telegram_id=user.telegram_id
     )
+
+
+@router.get("/is-admin", response_model=schemas.IsAdminResponse)
+async def check_if_user_is_admin(
+    user: User = Depends(get_current_user)
+):
+
+    return {"is_admin": user.is_admin}
