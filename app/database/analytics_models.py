@@ -1,5 +1,4 @@
 from sqlalchemy import Column, Integer, String, Date, Float, UniqueConstraint, DateTime, func, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
 
 from app.database.base import Base
 
@@ -39,13 +38,3 @@ class CompletedTaskLog(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
     cost = Column(Float, nullable=False)
     prime_cost = Column(Float, nullable=False)
-
-
-class Prompts(Base):
-    __tablename__ = 'prompts'
-
-    prompt_id = Column(Integer, primary_key=True, autoincrement=True)
-    prompt = Column(String, index=True, nullable=False)
-    guid = Column(UUID(as_uuid=True), index=True, nullable=False)
-
-

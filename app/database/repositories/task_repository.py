@@ -28,7 +28,7 @@ class TaskRepository:
             insert_values = {
                 "id": task_data["_id"],
                 "user_id": task_data["user_id"],
-                "model_name": task_data["model"],
+                "model_slug": task_data["model"],
                 "params": task_data.get("params", {}),
                 "cost": task_data.get("cost"),
                 "prime_cost": task_data.get("prime_cost"),
@@ -113,7 +113,7 @@ class TaskRepository:
 
             where_conditions = [GenerationTask.user_id == user_id]
             if model_name:
-                where_conditions.append(GenerationTask.model_name == model_name)
+                where_conditions.append(GenerationTask.model_slug == model_name)
 
             stmt_tasks = (
                 select(GenerationTask)

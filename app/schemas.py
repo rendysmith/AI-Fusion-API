@@ -1,7 +1,10 @@
+import json
+import re
 from datetime import datetime
 from typing import List, Literal, Optional, Any, Annotated, Union, Dict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator, field_validator, ConfigDict
+
 
 class BaseModelParams(BaseModel):
     pass
@@ -130,3 +133,133 @@ class UserBalanceResponse(BaseModel):
     balance: float
     plan: Optional[str] = None
     generations_left: Optional[int] = None
+
+
+class PlanSchema(BaseModel):
+    id: int
+    name: str
+    slug: str
+    generationsPerMonth: int
+
+class SubscriptionSchema(BaseModel):
+    status: str
+    currentPeriodEnd: datetime
+
+class UserProfileResponse(BaseModel):
+    uid: str
+    email: Optional[str] = None
+    username: Optional[str] = None
+    displayName: Optional[str] = None
+    photoURL: Optional[str] = None
+    balance: float
+    currency: str = "RUB"
+    isAdmin: bool = False
+    currentPlan: Optional[PlanSchema] = None
+    subscription: Optional[SubscriptionSchema] = None
+    telegramId: Optional[int] = None
+    telegramUsername: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class UserProfileUpdateRequest(BaseModel):
+    username: Optional[str] = Field(None, min_length=3, max_length=30)
+    displayName: Optional[str] = Field(None, max_length=100)
+    photoURL: Optional[str] = Field(None, max_length=255)
+
+    @classmethod
+    @field_validator('username')
+    def validate_username(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+
+        if not re.match(r'^[a-zA-Z0-9_]+$', v):
+            raise ValueError('Username must contain only letters, numbers, and underscores')
+        return v
+
+
+
+class TelegramInitRequest(BaseModel):
+    linkExisting: bool = True
+
+class TelegramInitResponse(BaseModel):
+    token: str
+    expiresAt: datetime
+    botUrl: str
+    qrCode: str
+
+class TelegramStatusResponse(BaseModel):
+    status: str
+    expiresAt: Optional[datetime] = None
+    telegramId: Optional[int] = None
+    telegramUsername: Optional[str] = None
+    linkedAt: Optional[datetime] = None
+
+
+class TelegramWebhookPayload(BaseModel):
+    token: str
+    telegram_id: int
+    username: Optional[str] = None
+
+
+class AiModelBase(BaseModel):
+    name: str = Field(..., min_length=1)
+    slug: str = Field(..., min_length=1, pattern=r'^[a-z0-9-]+$')
+    description: str
+    provider: str
+    category: Literal["video", "image", "text", "audio"]
+    is_available: bool = True
+    is_new: bool = False
+    is_best: bool = False
+    icon_url: Optional[str] = None
+    sort_order: int = 0
+    settings: Optional[Dict[str, Any]] = None
+
+
+class AiModelCreate(AiModelBase):
+    is_available: bool | int
+    is_new: bool | int
+    is_best: bool | int
+    settings: Optional[str] = None
+
+    @classmethod
+    @field_validator('is_available', 'is_new', 'is_best', mode='before')
+    def convert_int_to_bool(cls, v):
+        return bool(v)
+
+
+class AiModelUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1)
+    slug: Optional[str] = Field(None, min_length=1, pattern=r'^[a-z0-9-]+$')
+    description: Optional[str] = None
+    provider: Optional[str] = None
+    category: Optional[Literal["video", "image", "text", "audio"]] = None
+    is_available: Optional[bool | int] = None
+    is_new: Optional[bool | int] = None
+    is_best: Optional[bool | int] = None
+    icon_url: Optional[str] = None
+    sort_order: Optional[int] = None
+    settings: Optional[str | Dict[str, Any]] = None
+
+    @classmethod
+    @field_validator('is_available', 'is_new', 'is_best', mode='before')
+    def convert_int_to_bool_opt(cls, v):
+        if v is not None:
+            return bool(v)
+        return v
+
+
+class AiModelResponse(AiModelBase):
+    id: int
+    settings: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @classmethod
+    @field_validator('settings', mode='before')
+    def convert_json_to_string(cls, v):
+        if isinstance(v, dict):
+            return json.dumps(v)
+        return v

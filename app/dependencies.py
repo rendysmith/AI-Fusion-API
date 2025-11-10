@@ -4,12 +4,14 @@ from starlette import status
 
 from app.database.main_models import User
 from app.database.redis_db import get_redis_client
+from app.database.repositories.ai_model_repository import AiModelRepository
 from app.database.repositories.analytics_repository import AnalyticsRepository
 from app.database.repositories.circuit_breaker_repository import CircuitBreakerRepository
 from app.database.repositories.price_repository import PriceRepository
 from app.database.engine import async_session_factory
 from app.database.repositories.qr_session_repository import QrSessionRepository
 from app.database.repositories.task_repository import TaskRepository
+from app.database.repositories.telegram_token_repository import TelegramTokenRepository
 
 from app.database.repositories.user_repository import UserRepository
 from app.services.firebase_service import verify_firebase_token
@@ -30,11 +32,16 @@ async def get_current_user(
         token: str = Depends(oauth2_scheme),
         user_repo: UserRepository = Depends(get_user_repository)
 ) -> User:
-
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    profile_not_found_exception = HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="User profile not found. Please complete registration.",
+        headers={"X-Error-Code": "PROFILE_NOT_FOUND"},
     )
 
     try:
@@ -44,11 +51,11 @@ async def get_current_user(
         if firebase_uid is None:
             raise credentials_exception
 
+        user = await user_repo.get_by_firebase_uid(uid=firebase_uid)
 
-        user = await user_repo.get_or_create_by_firebase_uid(
-            uid=firebase_uid,
-            email=decoded_token.get("email")
-        )
+        if user is None:
+            raise profile_not_found_exception
+
         return user
 
     except ValueError:
@@ -65,6 +72,10 @@ def get_task_repository() -> TaskRepository:
 
 def get_analytics_repository() -> AnalyticsRepository:
     return AnalyticsRepository(async_session_factory)
+
+
+def get_telegram_token_repository() -> TelegramTokenRepository:
+    return TelegramTokenRepository(async_session_factory)
 
 
 def get_qr_session_repository(
@@ -97,3 +108,20 @@ async def check_bot_secret_key(header: str = Security(api_key_header)):
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Invalid or missing bot secret key"
     )
+
+
+def get_ai_model_repository() -> AiModelRepository:
+    return AiModelRepository(async_session_factory)
+
+
+
+async def get_current_admin_user(
+    user: User = Depends(get_current_user)
+) -> User:
+
+    if not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: requires admin privileges."
+        )
+    return user

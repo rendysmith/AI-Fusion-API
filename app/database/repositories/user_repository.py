@@ -2,10 +2,11 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import selectinload
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.future import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app import schemas
 from app.database.main_models import User
 
 
@@ -115,3 +116,49 @@ class UserRepository(BaseRepository):
             )
             await session.execute(stmt)
             await session.commit()
+
+
+    async def get_by_username(self, username: str) -> User | None:
+        async with self.session_factory() as session:
+            stmt = select(User).where(User.username == username)
+            result = await session.execute(stmt)
+            return result.scalars().first()
+
+    async def create_or_update_profile(
+            self,
+            firebase_uid: str,
+            email: Optional[str],
+            payload: schemas.UserProfileUpdateRequest
+    ) -> User:
+
+        async with self.session_factory() as session:
+
+            update_data = payload.dict(exclude_unset=True)
+
+
+            stmt = pg_insert(User).values(
+                firebase_uid=firebase_uid,
+                email=email,
+                **update_data
+            )
+
+            if not update_data:
+                on_conflict_stmt = stmt.on_conflict_do_nothing(
+                    index_elements=['firebase_uid']
+                )
+            else:
+
+                on_conflict_stmt = stmt.on_conflict_do_update(
+                    index_elements=['firebase_uid'],
+                    set_=update_data
+                )
+
+            await session.execute(on_conflict_stmt)
+            await session.commit()
+
+
+            user = await self.get_by_firebase_uid(firebase_uid)
+            if user is None:
+                raise Exception("User not found after UPSERT. This should not happen.")
+
+            return user
