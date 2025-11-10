@@ -8,6 +8,7 @@ from app.database.repositories.ai_model_repository import AiModelRepository
 from app.database.repositories.analytics_repository import AnalyticsRepository
 from app.database.repositories.circuit_breaker_repository import CircuitBreakerRepository
 from app.database.engine import async_session_factory
+from app.database.repositories.plan_repository import SubscriptionPlanRepository
 from app.database.repositories.qr_session_repository import QrSessionRepository
 from app.database.repositories.task_repository import TaskRepository
 from app.database.repositories.telegram_token_repository import TelegramTokenRepository
@@ -124,3 +125,7 @@ async def get_current_admin_user(
 
 def get_template_repository() -> TemplateRepository:
     return TemplateRepository(async_session_factory)
+
+
+def get_subscription_plan_repository() -> SubscriptionPlanRepository:
+    return SubscriptionPlanRepository(async_session_factory)
