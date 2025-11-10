@@ -1,12 +1,14 @@
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Tuple, List
 
-from sqlalchemy import update
+from sqlalchemy import update, func
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.future import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import selectinload
 
 from app import schemas
+from app.database.billing_models import UserSubscription
 from app.database.main_models import User
 
 
@@ -125,4 +127,43 @@ class UserRepository(BaseRepository):
             if user is None:
                 raise Exception("User not found after UPSERT. This should not happen.")
 
+            return user
+
+    async def get_all_paginated_with_subs(
+            self, page: int, limit: int
+    ) -> Tuple[List[User], int]:
+
+        offset = (page - 1) * limit
+
+        async with self.session_factory() as session:
+
+            stmt_users = (
+                select(User)
+                .order_by(User.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+                .options(
+
+                    selectinload(User.subscription).joinedload(UserSubscription.plan)
+                )
+            )
+            result_users = await session.execute(stmt_users)
+            users = result_users.scalars().unique().all()
+
+
+            stmt_count = select(func.count(User.id))
+            total = (await session.scalar(stmt_count)) or 0
+
+            return users, total
+
+
+    async def block_user(self, firebase_uid: str, is_blocked: bool) -> Optional[User]:
+        async with self.session_factory() as session:
+            user = await self.get_by_firebase_uid(firebase_uid)
+            if not user:
+                return None
+
+            user.is_blocked = is_blocked
+            await session.commit()
+            await session.refresh(user)
             return user

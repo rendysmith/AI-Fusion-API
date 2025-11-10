@@ -11,6 +11,7 @@ from app.database.engine import async_session_factory
 from app.database.repositories.plan_access_repository import PlanAccessRepository
 from app.database.repositories.plan_repository import SubscriptionPlanRepository
 from app.database.repositories.qr_session_repository import QrSessionRepository
+from app.database.repositories.subscription_repository import SubscriptionRepository
 from app.database.repositories.task_repository import TaskRepository
 from app.database.repositories.telegram_token_repository import TelegramTokenRepository
 from app.database.repositories.template_repository import TemplateRepository
@@ -134,3 +135,7 @@ def get_subscription_plan_repository() -> SubscriptionPlanRepository:
 
 def get_plan_access_repository() -> PlanAccessRepository:
     return PlanAccessRepository(async_session_factory)
+
+
+def get_subscription_repository() -> SubscriptionRepository:
+    return SubscriptionRepository(async_session_factory)

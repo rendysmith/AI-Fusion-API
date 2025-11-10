@@ -1,4 +1,5 @@
 from sqlalchemy import Column, String, Float, BigInteger, DECIMAL, Boolean, Integer, DateTime, func, ForeignKey
+from sqlalchemy.orm import relationship
 
 from app.database.base import Base
 
@@ -19,6 +20,13 @@ class User(Base):
 
     is_admin = Column(Boolean, default=False, nullable=False)
     is_blocked = Column(Boolean, default=False, nullable=False)
+
+    subscription = relationship(
+        "UserSubscription",
+        primaryjoin="and_(User.id == UserSubscription.user_id, UserSubscription.status == 'active')",
+        uselist=False,
+        lazy="joined" 
+    )
 
     created_at = Column(
         DateTime(timezone=True),

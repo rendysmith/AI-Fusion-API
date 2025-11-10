@@ -1,5 +1,7 @@
 from sqlalchemy import Column, String, Integer, DateTime, func, Boolean, Float, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
+
 from app.database.base import Base
 
 
@@ -55,6 +57,8 @@ class UserSubscription(Base):
     get_course_deal_number = Column(String(100), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    plan = relationship("SubscriptionPlan", lazy="joined")
 
 
 class PaymentInvoice(Base):
