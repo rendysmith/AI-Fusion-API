@@ -101,10 +101,11 @@ async def get_user_profile(
         display_name=user.display_name,
         photo_url=user.photo_url,
         balance=float(user.balance),
+        is_admin=user.is_admin,
         current_plan=plan,
         subscription=sub,
         telegram_id=user.telegram_id,
-        telegram_username=None
+        telegram_username=None,
     )
 
 
@@ -159,6 +160,7 @@ async def create_or_update_user_profile(
         display_name=user.display_name,
         photo_url=user.photo_url,
         balance=float(user.balance),
+        is_admin=user.is_admin,
         current_plan=plan,
         subscription=sub,
         telegram_id=user.telegram_id

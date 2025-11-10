@@ -13,7 +13,7 @@ router = APIRouter(prefix="/ai-models", tags=["AI Models"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=List[schemas.AiModelResponse],
     summary="Get list of all AI models"
 )
@@ -47,7 +47,7 @@ admin_router = APIRouter(
 )
 
 
-@admin_router.post("/", response_model=schemas.AiModelResponse, status_code=status.HTTP_201_CREATED)
+@admin_router.post("", response_model=schemas.AiModelResponse, status_code=status.HTTP_201_CREATED)
 async def create_ai_model(
     payload: schemas.AiModelCreate,
     repo: AiModelRepository = Depends(get_ai_model_repository)
