@@ -139,33 +139,33 @@ class PlanSchema(BaseModel):
     id: int
     name: str
     slug: str
-    generationsPerMonth: int
+    generations_per_month: int = Field(alias="generationsPerMonth")
 
 class SubscriptionSchema(BaseModel):
     status: str
-    currentPeriodEnd: datetime
+    current_period_end: datetime = Field(alias="currentPeriodEnd")
 
 class UserProfileResponse(BaseModel):
     uid: str
     email: Optional[str] = None
     username: Optional[str] = None
-    displayName: Optional[str] = None
-    photoURL: Optional[str] = None
+    display_name: Optional[str] = None
+    photo_url: Optional[str] = None
     balance: float
     currency: str = "RUB"
-    isAdmin: bool = False
-    currentPlan: Optional[PlanSchema] = None
+    is_admin: bool = False
+    current_plan: Optional[PlanSchema] = None
     subscription: Optional[SubscriptionSchema] = None
-    telegramId: Optional[int] = None
-    telegramUsername: Optional[str] = None
+    telegram_id: Optional[int] = None
+    telegram_username: Optional[str] = None
 
     class Config:
         from_attributes = True
 
 class UserProfileUpdateRequest(BaseModel):
     username: Optional[str] = Field(None, min_length=3, max_length=30)
-    displayName: Optional[str] = Field(None, max_length=100)
-    photoURL: Optional[str] = Field(None, max_length=255)
+    display_name: Optional[str] = Field(None, max_length=100)
+    photo_url: Optional[str] = Field(None, max_length=255)
 
     @classmethod
     @field_validator('username')
@@ -180,20 +180,20 @@ class UserProfileUpdateRequest(BaseModel):
 
 
 class TelegramInitRequest(BaseModel):
-    linkExisting: bool = True
+    link_existing: bool = True
 
 class TelegramInitResponse(BaseModel):
     token: str
-    expiresAt: datetime
-    botUrl: str
-    qrCode: str
+    expires_at: datetime
+    bot_url: str
+    qr_code: str
 
 class TelegramStatusResponse(BaseModel):
     status: str
-    expiresAt: Optional[datetime] = None
-    telegramId: Optional[int] = None
-    telegramUsername: Optional[str] = None
-    linkedAt: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    telegram_id: Optional[int] = None
+    telegram_username: Optional[str] = None
+    linked_at: Optional[datetime] = None
 
 
 class TelegramWebhookPayload(BaseModel):

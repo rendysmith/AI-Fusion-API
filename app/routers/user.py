@@ -91,7 +91,6 @@ async def get_user_profile(
         user: User = Depends(get_current_user)
 ):
 
-
     plan = schemas.PlanSchema(id=1, name="Free", slug="free", generationsPerMonth=10)
     sub = schemas.SubscriptionSchema(status="active", currentPeriodEnd=datetime.now())
 
@@ -99,13 +98,13 @@ async def get_user_profile(
         uid=user.firebase_uid,
         email=user.email,
         username=user.username,
-        displayName=user.displayName,
-        photoURL=user.photoURL,
+        display_name=user.displayName,
+        photo_url=user.photoURL,
         balance=float(user.balance),
-        currentPlan=plan,
+        current_plan=plan,
         subscription=sub,
-        telegramId=user.telegram_id,
-        telegramUsername=None
+        telegram_id=user.telegram_id,
+        telegram_username=None
     )
 
 
@@ -157,10 +156,10 @@ async def create_or_update_user_profile(
         uid=user.firebase_uid,
         email=user.email,
         username=user.username,
-        displayName=user.displayName,
-        photoURL=user.photoURL,
+        display_name=user.displayName,
+        photo_url=user.photoURL,
         balance=float(user.balance),
-        currentPlan=plan,
+        current_plan=plan,
         subscription=sub,
-        telegramId=user.telegram_id
+        telegram_id=user.telegram_id
     )
