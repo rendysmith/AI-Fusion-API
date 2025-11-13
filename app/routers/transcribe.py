@@ -60,11 +60,17 @@ async def transcribe_audio(
 
     try:
 
+        file_bytes = await audio_file.read()
+
+        file_tuple = (audio_file.filename, file_bytes, audio_file.content_type)
+
+
         response = await openai_client.audio.transcriptions.create(
             model="whisper-1",
-            file=audio_file.file,
+            file=file_tuple,
             language=language
         )
+
 
         return {"text": response.text}
 
