@@ -12,8 +12,7 @@ from app.dependencies import (
 
 router = APIRouter(
     prefix="/templates",
-    tags=["Templates"],
-    dependencies=[Depends(get_current_user)]
+    tags=["Templates"]
 )
 
 @router.get(
