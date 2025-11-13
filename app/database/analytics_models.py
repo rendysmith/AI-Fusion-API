@@ -19,13 +19,13 @@ class UserModelStats(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    model_name = Column(String(100), nullable=False)
+    model_slug = Column(String(100), nullable=False)
     total_tasks_completed = Column(Integer, nullable=False, default=0)
     total_spending = Column(Float, nullable=False, default=0.0)
 
 
     __table_args__ = (
-        UniqueConstraint('user_id', 'model_name', name='uq_user_model_stats'),
+        UniqueConstraint('user_id', 'model_slug', name='uq_user_model_stats'),
     )
 
 
@@ -35,7 +35,7 @@ class CompletedTaskLog(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     task_mongo_id = Column(String(36), index=True, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
-    model_name = Column(String(100), index=True, nullable=False)
+    model_slug = Column(String(100), index=True, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
     cost = Column(Float, nullable=False)
     prime_cost = Column(Float, nullable=False)

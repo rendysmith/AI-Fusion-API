@@ -17,7 +17,9 @@ class GenerationTask(Base):
 
 
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
-    model_name = Column(String(100), nullable=False, index=True)
+
+    model_slug = Column(String(100), ForeignKey("ai_models.slug"), nullable=False, index=True)
+    provider_job_id = Column(String(100), nullable=True, index=True)
 
     cost = Column(Float, nullable=False)
     prime_cost = Column(Float, nullable=False)

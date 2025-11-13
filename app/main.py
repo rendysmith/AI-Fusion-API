@@ -12,9 +12,9 @@ from starlette.responses import HTMLResponse
 
 from app.database.base import Base
 from app.database.main_models import User
+from app.database.repositories.ai_model_repository import AiModelRepository
 from app.database.repositories.task_repository import TaskRepository
 from app.database.engine import engine
-from app.database.repositories.price_repository import PriceRepository
 from app import schemas
 from app import dependencies
 from app.database.repositories.user_repository import UserRepository
@@ -27,11 +27,17 @@ from app.settings import settings
 
 from app.routers import auth as auth_router
 from app.routers import user as user_router
+from app.routers import ai_models as ai_models_router
+from app.routers import templates as templates_router
+from app.routers import subscription_plans as plans_router
+from app.routers import plan_access as plan_access_router
+from app.routers import admin_users as admin_users_router
 
 
 import app.database.main_models
 import app.database.analytics_models
 import app.database.task_models
+import app.database.billing_models
 
 
 @asynccontextmanager
@@ -80,6 +86,14 @@ app = FastAPI(
 
 app.include_router(auth_router.router)
 app.include_router(user_router.router)
+app.include_router(ai_models_router.router)
+app.include_router(ai_models_router.admin_router)
+
+app.include_router(templates_router.router)
+app.include_router(templates_router.admin_router)
+app.include_router(plans_router.admin_router)
+app.include_router(plan_access_router.admin_router)
+app.include_router(admin_users_router.admin_router)
 
 
 app.add_middleware(
@@ -125,17 +139,19 @@ async def generate(
         request_data: schemas.GenerateRequest,
         request: Request,
         user: User = AUTH_DEPENDENCY,
-        price_repo: PriceRepository = Depends(dependencies.get_price_repository),
-        user_repo: UserRepository = Depends(dependencies.get_user_repository)
+        ai_model_repo: AiModelRepository = Depends(dependencies.get_ai_model_repository),
+        user_repo: UserRepository = Depends(dependencies.get_user_repository),
+        task_repo: TaskRepository = Depends(dependencies.get_task_repository)
 ):
 
     s3_client = request.app.state.s3_client
 
     service = GenerationService(
         user=user,
-        price_repo=price_repo,
+        ai_model_repo=ai_model_repo,
         user_repo=user_repo,
-        s3_client=s3_client
+        s3_client=s3_client,
+        task_repo=task_repo
     )
 
     task_id, task_message_body, new_balance = await service.prepare_generation_task(request_data.params)

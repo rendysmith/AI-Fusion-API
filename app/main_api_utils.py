@@ -1,37 +1,56 @@
+import json
+
 from fastapi import HTTPException
 from starlette import status
 
-from app.constants import MODELS_WITH_DURATION_COST
+
 from app.database.main_models import User
-from app.database.repositories.price_repository import PriceRepository
+from app.database.repositories.ai_model_repository import AiModelRepository
+from app.settings import settings
 
 
 async def get_final_cost(
         user: User,
         model_name: str,
         model_params: dict,
-        price_repo: PriceRepository,
+        ai_model_repo: AiModelRepository,
 ) -> tuple[float, float]:
+    model_obj = await ai_model_repo.get_by_slug(model_name)
+    if not model_obj:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Model '{model_name}' not found in ai_models table."
+        )
 
 
-    if model_name in MODELS_WITH_DURATION_COST:
+    settings_data = {}
+    if isinstance(model_obj.settings, str):
+
+        try:
+            settings_data = json.loads(model_obj.settings)
+        except json.JSONDecodeError:
+            pass
+    elif isinstance(model_obj.settings, dict):
+
+        settings_data = model_obj.settings
+
+
+    if not settings_data or "cost" not in settings_data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Price for model '{model_name}' is not set in 'settings' JSON."
+        )
+
+    base_cost = float(settings_data["cost"])
+    base_prime_cost = float(settings_data.get("prime_cost", 0.0))
+
+
+    if model_name in settings.MODELS_WITH_DURATION_COST:
         multiplier = model_params.get('duration', 1) or 1
     else:
         multiplier = model_params.get('num_images', 1) or 1
 
-
-    price_obj = await price_repo.get_by_model_name(model_name)
-    if not price_obj:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Price for model '{model_name}' is not set."
-        )
-    base_cost = float(price_obj.cost)
-    base_prime_cost = float(price_obj.prime_cost)
-
     final_cost = round(base_cost * multiplier * user.coefficient, 6)
     prime_cost = round(base_prime_cost * multiplier, 6)
-
-
 
     return final_cost, prime_cost

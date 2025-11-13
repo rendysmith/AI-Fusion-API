@@ -12,7 +12,7 @@ class AnalyticsRepository:
         self.session_factory = session_factory
 
     async def log_and_update_stats_on_completion(
-            self, task_id: str, user_id: int, model_name: str,
+            self, task_id: str, user_id: int, model_slug: str,
             cost: float, prime_cost: float, created_at: datetime
     ):
 
@@ -20,7 +20,7 @@ class AnalyticsRepository:
 
             log_entry = CompletedTaskLog(
                 task_mongo_id=task_id, user_id=user_id,
-                model_name=model_name, cost=cost, prime_cost=prime_cost, created_at=created_at
+                model_slug=model_slug, cost=cost, prime_cost=prime_cost, created_at=created_at
             )
             session.add(log_entry)
 
@@ -43,11 +43,11 @@ class AnalyticsRepository:
             await session.execute(stmt_daily_upsert)
 
             stmt_user_model = pg_insert(UserModelStats).values(
-                user_id = user_id, model_name = model_name,
+                user_id=user_id, model_slug = model_slug,
                 total_tasks_completed=1, total_spending=cost
             )
             stmt_user_model_upsert = stmt_user_model.on_conflict_do_update(
-                index_elements = ['user_id', 'model_name'],
+                index_elements = ['user_id', 'model_slug'],
                 set_={
                     'total_tasks_completed': UserModelStats.total_tasks_completed + 1,
                     'total_spending': UserModelStats.total_spending + stmt_user_model.excluded.total_spending
@@ -80,9 +80,9 @@ class AnalyticsRepository:
     async def get_overall_model_usage(self):
         async with self.session_factory() as session:
             stmt = select(
-                UserModelStats.model_name,
+                UserModelStats.model_slug,
                 func.sum(UserModelStats.total_tasks_completed).label('usage_count')
-            ).group_by(UserModelStats.model_name).order_by(func.sum(UserModelStats.total_tasks_completed).desc())
+            ).group_by(UserModelStats.model_slug).order_by(func.sum(UserModelStats.total_tasks_completed).desc())
             result = await session.execute(stmt)
             return result.all()
 
@@ -115,9 +115,9 @@ class AnalyticsRepository:
 
 
             model_usage_stmt = select(
-                CompletedTaskLog.model_name,
+                CompletedTaskLog.model_slug,
                 func.count().label('count')
-            ).where(*where_clause).group_by(CompletedTaskLog.model_name).order_by(func.count().desc())
+            ).where(*where_clause).group_by(CompletedTaskLog.model_slug).order_by(func.count().desc())
 
             model_usage_result = (await session.execute(model_usage_stmt)).all()
 
@@ -136,9 +136,9 @@ class AnalyticsRepository:
             summary = (await session.execute(stmt)).first()
 
             model_usage_stmt = select(
-                UserModelStats.model_name,
+                UserModelStats.model_slug,
                 func.sum(UserModelStats.total_tasks_completed).label("count")
-            ).where(UserModelStats.user_id == user_id).group_by(UserModelStats.model_name)
+            ).where(UserModelStats.user_id == user_id).group_by(UserModelStats.model_slug)
 
 
             model_usage = (await session.execute(model_usage_stmt)).all()
@@ -167,7 +167,7 @@ class AnalyticsRepository:
             if user_id:
                 query = query.where(CompletedTaskLog.user_id == user_id)
             if model_name:
-                query = query.where(CompletedTaskLog.model_name == model_name)
+                query = query.where(CompletedTaskLog.model_slug == model_name)
 
 
             report_subquery = query.subquery()
@@ -183,7 +183,7 @@ class AnalyticsRepository:
 
 
             model_breakdown_stmt = select(
-                report_subquery.c.model_name,
+                report_subquery.c.model_slug,
                 func.count().label("count"),
                 func.sum(report_subquery.c.cost).label("revenue")
             ).select_from(report_subquery).group_by(report_subquery.c.model_name).order_by(func.count().desc())

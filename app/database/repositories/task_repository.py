@@ -28,7 +28,7 @@ class TaskRepository:
             insert_values = {
                 "id": task_data["_id"],
                 "user_id": task_data["user_id"],
-                "model_name": task_data["model"],
+                "model_slug": task_data["model"],
                 "params": task_data.get("params", {}),
                 "cost": task_data.get("cost"),
                 "prime_cost": task_data.get("prime_cost"),
@@ -98,9 +98,6 @@ class TaskRepository:
             limit: int = 20,
             model_name: Optional[str] = None
     ) -> Tuple[List[GenerationTask], int]:
-        """
-        Получает список задач для пользователя с пагинацией и общее количество.
-        """
 
         if page < 1:
             page = 1
@@ -113,7 +110,7 @@ class TaskRepository:
 
             where_conditions = [GenerationTask.user_id == user_id]
             if model_name:
-                where_conditions.append(GenerationTask.model_name == model_name)
+                where_conditions.append(GenerationTask.model_slug == model_name)
 
             stmt_tasks = (
                 select(GenerationTask)
@@ -135,3 +132,25 @@ class TaskRepository:
             total = result_count or 0
 
             return tasks, total
+
+    async def create_pending_task(
+            self, task_id: str, user_id: int, model_slug: str,
+            cost: float, prime_cost: float, params: dict, created_at: datetime
+    ):
+
+        async with self.session_factory() as session:
+            stmt = pg_insert(GenerationTask).values(
+                id=task_id,
+                user_id=user_id,
+                model_slug=model_slug,
+                cost=cost,
+                prime_cost=prime_cost,
+                params=params,
+                created_at=created_at,
+                status="pending" 
+            )
+
+
+            stmt_with_conflict = stmt.on_conflict_do_nothing()
+            await session.execute(stmt_with_conflict)
+            await session.commit()

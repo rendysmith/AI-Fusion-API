@@ -1,11 +1,14 @@
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Tuple, List
 
-from sqlalchemy import update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import selectinload
+from sqlalchemy import update, func
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.future import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import selectinload
 
+from app import schemas
+from app.database.billing_models import UserSubscription
 from app.database.main_models import User
 
 
@@ -32,28 +35,6 @@ class UserRepository(BaseRepository):
             result = await session.execute(stmt)
             return result.scalars().first()
 
-    async def get_or_create_by_firebase_uid(self, uid: str, email: str | None) -> User:
-
-        async with self.session_factory() as session:
-
-            stmt = select(User).where(User.firebase_uid == uid)
-            result = await session.execute(stmt)
-            user = result.scalars().first()
-
-            if user:
-                return user
-
-
-            user = User(
-                firebase_uid=uid,
-                email=email,
-                coefficient=1.0
-            )
-            session.add(user)
-            await session.commit()
-            await session.refresh(user)
-            return user
-
     async def link_telegram_id(self, user_id: int, telegram_id: int) -> User:
 
         async with self.session_factory() as session:
@@ -64,20 +45,6 @@ class UserRepository(BaseRepository):
             result = await session.execute(stmt)
             await session.commit()
             return result.scalars().one()
-
-    async def create_user_for_telegram(self, uid: str, email: str, telegram_id: int) -> User:
-
-        async with self.session_factory() as session:
-            new_user = User(
-                firebase_uid=uid,
-                email=email,
-                telegram_id=telegram_id,
-                coefficient=1.0
-            )
-            session.add(new_user)
-            await session.commit()
-            await session.refresh(new_user)
-            return new_user
 
     async def link_firebase_uid(self, user_id: int, uid: str, email: str):
 
@@ -115,3 +82,88 @@ class UserRepository(BaseRepository):
             )
             await session.execute(stmt)
             await session.commit()
+
+
+    async def get_by_username(self, username: str) -> User | None:
+        async with self.session_factory() as session:
+            stmt = select(User).where(User.username == username)
+            result = await session.execute(stmt)
+            return result.scalars().first()
+
+    async def create_or_update_profile(
+            self,
+            firebase_uid: str,
+            email: Optional[str],
+            payload: schemas.UserProfileUpdateRequest
+    ) -> User:
+
+        async with self.session_factory() as session:
+
+            update_data = payload.dict(exclude_unset=True)
+
+
+            stmt = pg_insert(User).values(
+                firebase_uid=firebase_uid,
+                email=email,
+                **update_data
+            )
+
+            if not update_data:
+                on_conflict_stmt = stmt.on_conflict_do_nothing(
+                    index_elements=['firebase_uid']
+                )
+            else:
+
+                on_conflict_stmt = stmt.on_conflict_do_update(
+                    index_elements=['firebase_uid'],
+                    set_=update_data
+                )
+
+            await session.execute(on_conflict_stmt)
+            await session.commit()
+
+
+            user = await self.get_by_firebase_uid(firebase_uid)
+            if user is None:
+                raise Exception("User not found after UPSERT. This should not happen.")
+
+            return user
+
+    async def get_all_paginated_with_subs(
+            self, page: int, limit: int
+    ) -> Tuple[List[User], int]:
+
+        offset = (page - 1) * limit
+
+        async with self.session_factory() as session:
+
+            stmt_users = (
+                select(User)
+                .order_by(User.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+                .options(
+
+                    selectinload(User.subscription).joinedload(UserSubscription.plan)
+                )
+            )
+            result_users = await session.execute(stmt_users)
+            users = result_users.scalars().unique().all()
+
+
+            stmt_count = select(func.count(User.id))
+            total = (await session.scalar(stmt_count)) or 0
+
+            return users, total
+
+
+    async def block_user(self, firebase_uid: str, is_blocked: bool) -> Optional[User]:
+        async with self.session_factory() as session:
+            user = await self.get_by_firebase_uid(firebase_uid)
+            if not user:
+                return None
+
+            user.is_blocked = is_blocked
+            await session.commit()
+            await session.refresh(user)
+            return user

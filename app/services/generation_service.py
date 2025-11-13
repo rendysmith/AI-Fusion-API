@@ -8,8 +8,10 @@ from fastapi import HTTPException
 from starlette import status
 
 from app import schemas
+from app.database.billing_models import AiModel
 from app.database.main_models import User, Price
-from app.database.repositories.price_repository import PriceRepository
+from app.database.repositories.ai_model_repository import AiModelRepository
+from app.database.repositories.task_repository import TaskRepository
 from app.database.repositories.user_repository import UserRepository
 
 from app.main_api_utils import get_final_cost
@@ -25,14 +27,16 @@ class GenerationService:
     def __init__(
             self,
             user: User,
-            price_repo: PriceRepository,
+            ai_model_repo: AiModelRepository,
             user_repo: UserRepository,
-            s3_client: aiobotocore.client.BaseClient
+            s3_client: aiobotocore.client.BaseClient,
+            task_repo: TaskRepository
     ):
         self.user = user
-        self.price_repo = price_repo
+        self.ai_model_repo = ai_model_repo
         self.user_repo = user_repo
         self.s3_client = s3_client
+        self.task_repo = task_repo
 
     async def prepare_generation_task(
             self, model_params: AnyModelParams
@@ -55,9 +59,20 @@ class GenerationService:
         new_balance = await self._deduct_funds(final_cost)
 
         task_id = str(uuid.uuid4())
+        created_at = datetime.now(timezone.utc)
 
         task_message_body = self._prepare_task_message(
-            task_id, processed_params, final_cost, prime_cost
+            task_id, processed_params, final_cost, prime_cost, created_at
+        )
+
+        await self.task_repo.create_pending_task(
+            task_id=task_id,
+            user_id=self.user.id,
+            model_slug=processed_params.model_name,
+            cost=final_cost,
+            prime_cost=prime_cost,
+            params=processed_params.model_dump(),
+            created_at=created_at
         )
 
         return task_id, task_message_body, new_balance
@@ -68,24 +83,25 @@ class GenerationService:
             model_params: schemas.AnyModelParams,
             final_cost: float,
             prime_cost: float,
+            created_at: datetime
     ) -> dict:
 
         return {
             "_id": task_id,
             "status": "pending",
             "user_id": self.user.id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": created_at.isoformat(),
             "model": model_params.model_name,
-            "params": model_params.dict(),
+            "params": model_params.model_dump(),
             "cost": final_cost,
             "prime_cost": prime_cost,
             "result": None,
             "error": None,
         }
 
-    async def _validate_and_get_price(self, model_name: str) -> Price:
+    async def _validate_and_get_price(self, model_name: str) -> AiModel:
 
-        price_obj = await self.price_repo.get_by_model_name(model_name)
+        price_obj = await self.ai_model_repo.get_by_slug(model_name)
 
         if not price_obj:
             raise HTTPException(
@@ -93,7 +109,7 @@ class GenerationService:
                 detail=f"Price for model '{model_name}' is not set in the admin panel",
             )
 
-        if not price_obj.is_active:
+        if not price_obj.is_available:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Model '{model_name}' is temporarily disabled by the administrator",
@@ -108,8 +124,8 @@ class GenerationService:
         final_cost, prime_cost = await get_final_cost(
             user=self.user,
             model_name=model_name,
-            model_params=model_params.dict(),
-            price_repo=self.price_repo,
+            model_params=model_params.model_dump(),
+            ai_model_repo=self.ai_model_repo,
         )
 
         return final_cost, prime_cost
