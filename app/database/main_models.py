@@ -16,7 +16,7 @@ class User(Base):
     telegram_id = Column(BigInteger, unique=True, index=True, nullable=True)
     coefficient = Column(Float, default=1.0, nullable=False)
 
-    balance = Column(DECIMAL(precision=15, scale=6), default=60.0, nullable=False)
+    balance = Column(DECIMAL(precision=15, scale=6), default=0.0, nullable=False)
 
     is_admin = Column(Boolean, default=False, nullable=False)
     is_blocked = Column(Boolean, default=False, nullable=False)

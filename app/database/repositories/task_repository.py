@@ -154,3 +154,16 @@ class TaskRepository:
             stmt_with_conflict = stmt.on_conflict_do_nothing()
             await session.execute(stmt_with_conflict)
             await session.commit()
+
+    async def get_processing_task_count(self, user_id: int) -> int:
+
+        async with self.session_factory() as session:
+            stmt = (
+                select(func.count(GenerationTask.id))
+                .where(
+                    GenerationTask.user_id == user_id,
+                    GenerationTask.status == 'processing'
+                )
+            )
+            count = await session.scalar(stmt)
+            return count or 0

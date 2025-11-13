@@ -42,6 +42,26 @@ class GenerationService:
             self, model_params: AnyModelParams
     ) -> Tuple[str, Dict[str, Any], Decimal]:
 
+
+        active_plan = await self.user_repo.get_user_active_plan(self.user.id)
+
+        if not active_plan:
+
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="No active subscription found. Please contact support."
+            )
+
+        limit = active_plan.concurrent_generation_limit
+
+        current_count = await self.task_repo.get_processing_task_count(self.user.id)
+
+        if current_count >= limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Concurrent generation limit reached ({limit}). Please wait."
+            )
+
         model_name = model_params.model_name
 
         processed_params = await process_and_upload_images(
@@ -50,7 +70,6 @@ class GenerationService:
             bucket_name=settings.YANDEX_BUCKET_NAME,
             endpoint_url=settings.YANDEX_STORAGE_ENDPOINT
         )
-
 
         await self._validate_and_get_price(model_name)
         final_cost, prime_cost = await self._calculate_costs(processed_params)

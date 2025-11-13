@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import selectinload
 
 from app import schemas
-from app.database.billing_models import UserSubscription
+from app.database.billing_models import UserSubscription, SubscriptionPlan
 from app.database.main_models import User
 
 
@@ -167,3 +167,17 @@ class UserRepository(BaseRepository):
             await session.commit()
             await session.refresh(user)
             return user
+
+    async def get_user_active_plan(self, user_id: int) -> Optional[SubscriptionPlan]:
+
+        async with self.session_factory() as session:
+            stmt = (
+                select(SubscriptionPlan)
+                .join(UserSubscription, UserSubscription.plan_id == SubscriptionPlan.id)
+                .where(
+                    UserSubscription.user_id == user_id,
+                    UserSubscription.status == 'active'
+                )
+            )
+            result = await session.execute(stmt)
+            return result.scalars().first()

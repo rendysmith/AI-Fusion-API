@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Request, Header, HTTPException
@@ -7,8 +8,11 @@ from starlette import status
 
 from app import schemas
 from app.database.main_models import User
+from app.database.repositories.plan_repository import SubscriptionPlanRepository
+from app.database.repositories.subscription_repository import SubscriptionRepository
 from app.database.repositories.user_repository import UserRepository
-from app.dependencies import get_current_user, get_task_repository, get_user_repository
+from app.dependencies import get_current_user, get_task_repository, get_user_repository, \
+    get_subscription_plan_repository, get_subscription_repository
 from app.database.repositories.task_repository import TaskRepository
 from app.services.firebase_service import verify_firebase_token
 
@@ -115,6 +119,8 @@ async def create_or_update_user_profile(
         payload: schemas.UserProfileUpdateRequest,
         request: Request,
         user_repo: UserRepository = Depends(get_user_repository),
+        plan_repo: SubscriptionPlanRepository = Depends(get_subscription_plan_repository),
+        sub_repo: SubscriptionRepository = Depends(get_subscription_repository),
         authorization: str = Header(...)
 ):
 
@@ -130,9 +136,10 @@ async def create_or_update_user_profile(
     except Exception:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
 
+    existing_user = await user_repo.get_by_firebase_uid(firebase_uid)
+
 
     if payload.username:
-        existing_user = await user_repo.get_by_username(payload.username)
         if existing_user and existing_user.firebase_uid != firebase_uid:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -149,9 +156,30 @@ async def create_or_update_user_profile(
     except Exception as e:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"DB error: {e}")
 
+    if existing_user is None:
+        logging.info(f"New user detected (UID: {firebase_uid}). Assigning 'free' plan.")
 
-    plan = schemas.PlanSchema(id=1, name="Free", slug="free", generationsPerMonth=10)
-    sub = schemas.SubscriptionSchema(status="active", currentPeriodEnd=datetime.now())
+        free_plan = await plan_repo.get_by_slug("free")
+
+        if free_plan:
+            try:
+
+                await sub_repo.create_default_subscription(user, free_plan)
+
+                await user_repo.session_factory().refresh(user)
+
+                logging.info(f"Assigned 'free' plan with {free_plan.credits_granted} credits.")
+            except Exception as e:
+                logging.error(f"Failed to assign default subscription for user {firebase_uid}: {e}")
+        else:
+            logging.warning("Could not find 'free' plan in database to assign to new user.")
+
+    subscription = await sub_repo.get_active_subscription_by_user_id(user.id)
+    current_plan = None
+    if subscription:
+
+        current_plan = await plan_repo.get_by_id(subscription.plan_id)
+
 
     return schemas.UserProfileResponse(
         uid=user.firebase_uid,
@@ -161,8 +189,8 @@ async def create_or_update_user_profile(
         photo_url=user.photo_url,
         balance=float(user.balance),
         is_admin=user.is_admin,
-        current_plan=plan,
-        subscription=sub,
+        current_plan=current_plan,
+        subscription=subscription,
         telegram_id=user.telegram_id
     )
 

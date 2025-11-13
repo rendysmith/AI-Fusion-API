@@ -308,8 +308,7 @@ class SubscriptionPlanBase(BaseModel):
     slug: str = Field(..., min_length=1, pattern=r'^[a-z0-9-]+$')
     description: str
     price: int = Field(..., ge=0)
-    daily_generation_limit: int = Field(..., ge=1)
-    concurrent_generation_limit: int = Field(..., ge=1)
+    credits_granted: int = Field(..., ge=0)
     sort_order: int = 0
     is_active: bool
 
@@ -328,7 +327,7 @@ class SubscriptionPlanUpdate(BaseModel):
     slug: Optional[str] = Field(None, min_length=1, pattern=r'^[a-z0-9-]+$')
     description: Optional[str] = None
     price: Optional[int] = Field(None, ge=0)
-    daily_generation_limit: Optional[int] = Field(None, ge=1)
+    credits_granted: Optional[int] = Field(None, ge=0)
     concurrent_generation_limit: Optional[int] = Field(None, ge=1)
     sort_order: Optional[int] = None
     is_active: Optional[bool | int] = None

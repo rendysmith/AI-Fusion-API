@@ -34,7 +34,7 @@ class SubscriptionPlan(Base):
     slug = Column(String(100), nullable=False, unique=True, index=True)
     description = Column(Text, nullable=False)
     price = Column(Integer, nullable=False)
-    daily_generation_limit = Column(Integer, nullable=False, default=1)
+    credits_granted = Column(Integer, nullable=False, default=0)
     concurrent_generation_limit = Column(Integer, nullable=False, default=1)
     sort_order = Column(Integer, default=0)
     is_active = Column(Boolean, default=True, nullable=False)
@@ -94,8 +94,8 @@ class VideoTemplate(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
 
 
-    video_url = Column(String(512), nullable=False)
-    thumbnail_url = Column(String(512), nullable=False)
+    video_url = Column(Text, nullable=False)
+    thumbnail_url = Column(Text, nullable=False)
     title = Column(String(255), nullable=False)
     views_count = Column(String(50), nullable=True)
     prompt = Column(Text, nullable=False)

@@ -1,6 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from typing import Optional
 
@@ -64,3 +65,32 @@ class SubscriptionRepository:
                 await session.commit()
                 await session.refresh(new_sub)
                 return new_sub
+
+    async def create_default_subscription(self, user: User, free_plan: SubscriptionPlan):
+
+        async with self.session_factory() as session:
+            sub_id = f"sub_{user.firebase_uid}_{int(datetime.now().timestamp())}"
+
+            new_sub = UserSubscription(
+                id=sub_id,
+                user_id=user.id,
+                plan_id=free_plan.id,
+                status='active',
+                is_manual=True,
+                current_period_start=datetime.now(timezone.utc),
+                current_period_end=datetime.now(timezone.utc) + timedelta(days=365 * 100)
+            )
+            session.add(new_sub)
+
+
+            stmt_balance = (
+                update(User)
+                .where(User.id == user.id)
+                .values(balance=User.balance + free_plan.credits_granted)
+            )
+            await session.execute(stmt_balance)
+
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
