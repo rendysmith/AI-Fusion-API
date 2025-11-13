@@ -3,7 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from typing import List, Optional
 
-from app.database.billing_models import PlanModelAccess
+from app.database.billing_models import PlanModelAccess, AiModel
 from app.schemas import PlanModelAccessCreate
 
 
@@ -45,4 +45,16 @@ class PlanAccessRepository:
             result = await session.scalar(stmt)
             await session.commit()
 
-            return result is not None  
+            return result is not None
+
+    async def get_models_for_plan(self, plan_id: int) -> List[AiModel]:
+
+        async with self.session_factory() as session:
+            stmt = (
+                select(AiModel)
+                .join(PlanModelAccess, PlanModelAccess.model_id == AiModel.id)
+                .where(PlanModelAccess.plan_id == plan_id)
+                .where(AiModel.is_available == True)
+            )
+            result = await session.execute(stmt)
+            return result.scalars().all()

@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, Query, Request, Header, HTTPException
 from typing import List, Optional
@@ -8,11 +8,12 @@ from starlette import status
 
 from app import schemas
 from app.database.main_models import User
+from app.database.repositories.plan_access_repository import PlanAccessRepository
 from app.database.repositories.plan_repository import SubscriptionPlanRepository
 from app.database.repositories.subscription_repository import SubscriptionRepository
 from app.database.repositories.user_repository import UserRepository
 from app.dependencies import get_current_user, get_task_repository, get_user_repository, \
-    get_subscription_plan_repository, get_subscription_repository
+    get_subscription_plan_repository, get_subscription_repository, get_plan_access_repository
 from app.database.repositories.task_repository import TaskRepository
 from app.services.firebase_service import verify_firebase_token
 
@@ -201,3 +202,49 @@ async def check_if_user_is_admin(
 ):
 
     return {"is_admin": user.is_admin}
+
+
+@router.get(
+    "/subscription",
+    response_model=schemas.UserSubscriptionDetailResponse,
+    summary="Get user's current subscription details"
+)
+async def get_user_subscription(
+        user: User = Depends(get_current_user),
+        sub_repo: SubscriptionRepository = Depends(get_subscription_repository),
+        plan_access_repo: PlanAccessRepository = Depends(get_plan_access_repository),
+        task_repo: TaskRepository = Depends(get_task_repository)
+):
+
+    subscription = user.subscription
+    plan = user.subscription.plan if user.subscription else None
+
+    available_models_list = []
+    if plan:
+
+        models = await plan_access_repo.get_models_for_plan(plan.id)
+
+        available_models_list = [schemas.AvailableModel.model_validate(m) for m in models]
+    else:
+
+        pass
+
+
+
+
+    processing_count = await task_repo.get_processing_task_count(user.id)
+
+
+    time_24_hours_ago = datetime.now(timezone.utc) - timedelta(days=1)
+    today_count = await task_repo.get_tasks_count_since(user.id, time_24_hours_ago)
+
+    usage = schemas.SubscriptionUsage(
+        today=today_count,
+        concurrent=processing_count
+    )
+
+    return schemas.UserSubscriptionDetailResponse(
+        plan=plan,
+        available_models=available_models_list,
+        usage=usage
+    )

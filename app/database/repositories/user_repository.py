@@ -25,7 +25,15 @@ class UserRepository(BaseRepository):
 
     async def get_by_firebase_uid(self, uid: str) -> User | None:
         async with self.session_factory() as session:
-            stmt = select(User).where(User.firebase_uid == uid)
+
+            stmt = (
+                select(User)
+                .where(User.firebase_uid == uid)
+                .options(
+                    selectinload(User.subscription)
+                    .joinedload(UserSubscription.plan)
+                )
+            )
             result = await session.execute(stmt)
             return result.scalars().first()
 

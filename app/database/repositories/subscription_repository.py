@@ -5,6 +5,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from typing import Optional
 
+from sqlalchemy.orm import joinedload
+
 from app.database.main_models import User
 from app.database.billing_models import UserSubscription, SubscriptionPlan
 from app.schemas import UpdateSubscriptionRequest
@@ -94,3 +96,19 @@ class SubscriptionRepository:
                 await session.commit()
             except IntegrityError:
                 await session.rollback()
+
+    async def get_active_subscription_with_plan(self, user_id: int) -> Optional[UserSubscription]:
+
+        async with self.session_factory() as session:
+            stmt = (
+                select(UserSubscription)
+                .where(
+                    UserSubscription.user_id == user_id,
+                    UserSubscription.status == 'active'
+                )
+                .options(
+                    joinedload(UserSubscription.plan)
+                )
+            )
+            result = await session.execute(stmt)
+            return result.scalars().first()

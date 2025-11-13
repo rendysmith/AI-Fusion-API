@@ -444,3 +444,23 @@ class UpdateSubscriptionRequest(BaseModel):
 class UpdateSubscriptionResponse(BaseModel):
     subscription: AdminSubscriptionResponse
     success: bool = True
+
+
+
+class AvailableModel(BaseModel):
+    id: int
+    name: str
+    slug: str
+    category: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+class SubscriptionUsage(BaseModel):
+    today: int
+    concurrent: int
+
+class UserSubscriptionDetailResponse(BaseModel):
+
+    plan: Optional[SubscriptionPlanResponse] = None
+    available_models: List[AvailableModel]
+    usage: SubscriptionUsage

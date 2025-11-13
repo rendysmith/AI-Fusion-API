@@ -167,3 +167,17 @@ class TaskRepository:
             )
             count = await session.scalar(stmt)
             return count or 0
+
+    async def get_tasks_count_since(self, user_id: int, since_datetime: datetime) -> int:
+
+        async with self.session_factory() as session:
+            stmt = (
+                select(func.count(GenerationTask.id))
+                .where(
+                    GenerationTask.user_id == user_id,
+                    GenerationTask.status == 'completed',
+                    GenerationTask.created_at >= since_datetime
+                )
+            )
+            count = await session.scalar(stmt)
+            return count or 0
