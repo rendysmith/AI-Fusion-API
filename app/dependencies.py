@@ -6,6 +6,7 @@ from app.database.main_models import User
 from app.database.redis_db import get_redis_client
 from app.database.repositories.ai_model_repository import AiModelRepository
 from app.database.repositories.analytics_repository import AnalyticsRepository
+from app.database.repositories.billing_repository import BillingRepository
 from app.database.repositories.circuit_breaker_repository import CircuitBreakerRepository
 from app.database.engine import async_session_factory
 from app.database.repositories.plan_access_repository import PlanAccessRepository
@@ -17,6 +18,7 @@ from app.database.repositories.telegram_token_repository import TelegramTokenRep
 from app.database.repositories.template_repository import TemplateRepository
 
 from app.database.repositories.user_repository import UserRepository
+from app.services.billing_service import BillingService
 from app.services.firebase_service import verify_firebase_token
 
 import redis.asyncio as aioredis
@@ -139,3 +141,14 @@ def get_plan_access_repository() -> PlanAccessRepository:
 
 def get_subscription_repository() -> SubscriptionRepository:
     return SubscriptionRepository(async_session_factory)
+
+
+def get_billing_repository() -> BillingRepository:
+    return BillingRepository(async_session_factory)
+
+def get_billing_service(
+    user_repo: UserRepository = Depends(get_user_repository),
+    sub_repo: SubscriptionRepository = Depends(get_subscription_repository)
+) -> BillingService:
+
+    return BillingService(user_repo=user_repo, sub_repo=sub_repo)

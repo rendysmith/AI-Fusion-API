@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from typing import List, Optional
 
-from app.database.billing_models import AiModel
+from app.database.ai_model import AiModel
 from app.schemas import AiModelCreate, AiModelUpdate
 
 

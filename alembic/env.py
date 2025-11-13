@@ -11,6 +11,10 @@ import app.database.main_models
 import app.database.task_models
 import app.database.analytics_models
 import app.database.billing_models
+import app.database.subscription_models
+import app.database.ai_model
+import app.database.video_template_models
+
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

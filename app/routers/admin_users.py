@@ -119,7 +119,7 @@ async def update_user_subscription(
     subscription.plan = plan
 
 
-    subscription_dto = schemas.AdminSubscriptionResponse.model_validate(subscription)
+    subscription_dto = schemas.SubscriptionDetailResponse.model_validate(subscription)
 
 
     return schemas.UpdateSubscriptionResponse(

@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import Optional, Tuple, List
+from typing import Optional, Any, Sequence
 
 from sqlalchemy import update, func
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import selectinload
 
 from app import schemas
-from app.database.billing_models import UserSubscription, SubscriptionPlan
+from app.database.subscription_models import UserSubscription, SubscriptionPlan
 from app.database.main_models import User
 
 
@@ -107,7 +107,7 @@ class UserRepository(BaseRepository):
 
         async with self.session_factory() as session:
 
-            update_data = payload.dict(exclude_unset=True)
+            update_data = payload.model_dump(exclude_unset=True)
 
 
             stmt = pg_insert(User).values(
@@ -139,7 +139,7 @@ class UserRepository(BaseRepository):
 
     async def get_all_paginated_with_subs(
             self, page: int, limit: int
-    ) -> Tuple[List[User], int]:
+    ) -> tuple[Sequence[User], int | None | Any]:
 
         offset = (page - 1) * limit
 
@@ -189,3 +189,14 @@ class UserRepository(BaseRepository):
             )
             result = await session.execute(stmt)
             return result.scalars().first()
+
+    async def add_credits(self, user_id: int, amount: int):
+
+        async with self.session_factory() as session:
+            stmt = (
+                update(User)
+                .where(User.id == user_id)
+                .values(balance=User.balance + amount)
+            )
+            await session.execute(stmt)
+            await session.commit()

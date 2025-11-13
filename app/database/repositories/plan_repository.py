@@ -1,9 +1,9 @@
-from sqlalchemy import select, update, delete, asc, func
+from sqlalchemy import select, asc, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from typing import List, Optional
+from typing import Optional, Sequence
 
-from app.database.billing_models import SubscriptionPlan, UserSubscription
+from app.database.subscription_models import SubscriptionPlan, UserSubscription
 from app.schemas import SubscriptionPlanCreate, SubscriptionPlanUpdate
 
 
@@ -27,7 +27,7 @@ class SubscriptionPlanRepository:
             result = await session.execute(stmt)
             return result.scalars().first()
 
-    async def get_all(self, only_active: bool = False) -> List[SubscriptionPlan]:
+    async def get_all(self, only_active: bool = False) -> Sequence[SubscriptionPlan]:
 
         async with self.session_factory() as session:
             stmt = select(SubscriptionPlan).order_by(asc(SubscriptionPlan.sort_order))
@@ -54,7 +54,7 @@ class SubscriptionPlanRepository:
                     raise ValueError(f"Plan with name '{payload.name}' already exists")
                 raise e
 
-    async def update(self, plan_id: int, payload: SubscriptionPlanUpdate) -> Optional[SubscriptionPlan]:
+    async def update(self, plan_id: int, payload: SubscriptionPlanUpdate) -> type[SubscriptionPlan] | None:
         async with self.session_factory() as session:
             plan = await session.get(SubscriptionPlan, plan_id)
             if not plan:

@@ -34,7 +34,8 @@ from app.routers import subscription_plans as plans_router
 from app.routers import plan_access as plan_access_router
 from app.routers import admin_users as admin_users_router
 from app.routers import transcribe as transcribe_router
-
+from app.routers import billing as billing_router
+from app.routers import webhooks as webhooks_router
 
 import app.database.main_models
 import app.database.analytics_models
@@ -98,6 +99,8 @@ app.include_router(plans_router.router)
 app.include_router(plan_access_router.admin_router)
 app.include_router(admin_users_router.admin_router)
 app.include_router(transcribe_router.router)
+app.include_router(billing_router.router)
+app.include_router(webhooks_router.router)
 
 
 app.add_middleware(

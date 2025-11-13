@@ -2,7 +2,7 @@ from sqlalchemy import select, update, delete, asc
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from typing import List, Optional
 
-from app.database.billing_models import VideoTemplate
+from app.database.video_template_models import VideoTemplate
 from app.schemas import VideoTemplateCreate, VideoTemplateUpdate
 
 

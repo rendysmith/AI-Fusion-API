@@ -1,9 +1,10 @@
-from sqlalchemy import select, update, delete, asc, func
+from sqlalchemy import select, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from typing import List, Optional
+from typing import List
 
-from app.database.billing_models import PlanModelAccess, AiModel
+from app.database.billing_models import PlanModelAccess
+from app.database.ai_model import AiModel
 from app.schemas import PlanModelAccessCreate
 
 

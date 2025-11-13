@@ -8,7 +8,7 @@ from typing import Optional
 from sqlalchemy.orm import joinedload
 
 from app.database.main_models import User
-from app.database.billing_models import UserSubscription, SubscriptionPlan
+from app.database.subscription_models import UserSubscription, SubscriptionPlan
 from app.schemas import UpdateSubscriptionRequest
 
 
@@ -112,3 +112,38 @@ class SubscriptionRepository:
             )
             result = await session.execute(stmt)
             return result.scalars().first()
+
+    async def activate_subscription(self, user_id: int, plan_id: int):
+
+        async with self.session_factory() as session:
+            await session.execute(
+                update(UserSubscription)
+                .where(UserSubscription.user_id == user_id, UserSubscription.status == 'active')
+                .values(status='cancelled')
+            )
+
+            new_sub = UserSubscription(
+                id=f"sub_{user_id}_{int(datetime.now().timestamp())}",
+                user_id=user_id,
+                plan_id=plan_id,
+                status='active',
+                is_manual=False,
+                current_period_start=datetime.now(timezone.utc),
+                current_period_end=datetime.now(timezone.utc) + timedelta(days=30)
+            )
+            session.add(new_sub)
+            await session.commit()
+
+    async def cancel_subscription(self, user_id: int) -> Optional[UserSubscription]:
+
+        async with self.session_factory() as session:
+
+            active_sub = await self.get_active_subscription_with_plan(user_id)
+            if not active_sub:
+                return None
+
+            active_sub.status = "cancelled"
+
+            await session.commit()
+            await session.refresh(active_sub)
+            return active_sub

@@ -8,8 +8,8 @@ from fastapi import HTTPException
 from starlette import status
 
 from app import schemas
-from app.database.billing_models import AiModel
-from app.database.main_models import User, Price
+from app.database.ai_model import AiModel
+from app.database.main_models import User
 from app.database.repositories.ai_model_repository import AiModelRepository
 from app.database.repositories.plan_access_repository import PlanAccessRepository
 from app.database.repositories.task_repository import TaskRepository
