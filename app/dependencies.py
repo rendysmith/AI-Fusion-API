@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import Depends, HTTPException, Security
 from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from starlette import status
@@ -23,6 +25,7 @@ from app.services.firebase_service import verify_firebase_token
 
 import redis.asyncio as aioredis
 
+from app.services.getcourse_service import GetCourseService
 from app.settings import settings
 
 
@@ -152,3 +155,15 @@ def get_billing_service(
 ) -> BillingService:
 
     return BillingService(user_repo=user_repo, sub_repo=sub_repo)
+
+
+def get_getcourse_service() -> GetCourseService:
+  
+    if not settings.GETCOURSE_API_KEY or not settings.GETCOURSE_ACCOUNT_NAME:
+        logging.warning("GetCourse .env vars not set. Checkout will fail.")
+        return GetCourseService(api_key="dummy", account_name="dummy")
+
+    return GetCourseService(
+        api_key=settings.GETCOURSE_API_KEY,
+        account_name=settings.GETCOURSE_ACCOUNT_NAME
+    )

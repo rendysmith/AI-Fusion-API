@@ -517,9 +517,11 @@ class CheckoutResponse(BaseModel):
 
 
 class GetCourseWebhook(BaseModel):
-    status: str
-    number: str
-    user_email: Optional[str] = None
+
+    event_type: Optional[str] = None
+    deal_id: Optional[str] = None
+    deal_number: str
+    deal_status: str
 
 
     class Config:

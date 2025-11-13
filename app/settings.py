@@ -16,6 +16,9 @@ class Settings(BaseSettings):
 
     ALLOWED_ORIGINS: List[str] = Field(default_factory=lambda: ['*', '0.0.0.0'])
 
+    GETCOURSE_API_KEY: str
+    GETCOURSE_ACCOUNT_NAME: str
+
     KIE_AI: str
 
     OPENAI_API_KEY: str

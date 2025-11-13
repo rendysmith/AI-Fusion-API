@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends
 
 from app import schemas
@@ -11,6 +13,7 @@ router = APIRouter(
     tags=["Webhooks"]
 )
 
+
 @router.post("/getcourse")
 async def getcourse_webhook(
         payload: schemas.GetCourseWebhook,
@@ -18,19 +21,26 @@ async def getcourse_webhook(
         billing_service: BillingService = Depends(get_billing_service)
 ):
 
-    payment = await billing_repo.get_payment_by_external_id(payload.number)
+    payment = await billing_repo.get_payment_by_external_id(
+        external_id=payload.deal_number
+    )
     if not payment:
-        return {"status": "error", "msg": "Payment not found"}
+
+        logging.warning(f"GetCourse webhook: Payment not found for deal_number {payload.deal_number}")
+        return {"success": True}
 
     if payment.status == "completed":
-        return {"status": "ok", "msg": "Already processed"}
+        logging.info(f"GetCourse webhook: Payment {payment.internal_id} already processed. Ignoring.")
+        return {"success": True}
 
 
-    if payload.status == "payed":
+    if payload.deal_status == "payed":
 
         product = await billing_repo.get_product(payment.product_id)
         if not product:
-             return {"status": "error", "msg": "Product not found for payment"}
+            logging.error(
+                f"GetCourse webhook: Product {payment.product_id} not found for payment {payment.internal_id}")
+            return {"success": False, "msg": "Product not found"}
 
 
         await billing_service.grant_product_rewards(payment.user_id, product)
@@ -39,4 +49,10 @@ async def getcourse_webhook(
         await billing_repo.complete_payment(payment.internal_id)
         await billing_repo.create_invoice(payment)
 
-    return {"status": "ok"}
+        logging.info(f"Payment {payment.internal_id} (Deal: {payload.deal_number}) completed successfully.")
+
+    elif payload.deal_status in ["cancelled", "false"]:
+
+        pass
+
+    return {"success": True}

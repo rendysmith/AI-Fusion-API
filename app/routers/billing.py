@@ -7,7 +7,10 @@ from app import schemas
 from app.database.main_models import User
 from app.database.repositories.billing_repository import BillingRepository
 from app.database.repositories.subscription_repository import SubscriptionRepository
-from app.dependencies import get_current_user, get_billing_repository, get_subscription_repository
+from app.dependencies import get_current_user, get_billing_repository, get_subscription_repository, \
+    get_getcourse_service
+from app.services.getcourse_service import GetCourseService
+from app.settings import settings
 
 router = APIRouter(
     prefix="/billing", 
@@ -19,17 +22,33 @@ router = APIRouter(
 async def checkout(
     payload: schemas.CheckoutRequest,
     user: User = Depends(get_current_user),
-    billing_repo: BillingRepository = Depends(get_billing_repository)
+    billing_repo: BillingRepository = Depends(get_billing_repository),
+    gc_service: GetCourseService = Depends(get_getcourse_service)
 ):
     product = await billing_repo.get_product(payload.product_id)
-    if not product: 
+    if not product:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Product not found")
 
-    # 1. Создаем "сделку" в GetCourse (заглушка)
-    # В реальности тут запрос к API GetCourse
-    # Он вернет deal_number и payment_link
-    gc_deal_number = f"GC-{uuid.uuid4().hex[:8]}"
-    payment_link = f"https://getcourse.ru/pay?deal={gc_deal_number}"
+
+    try:
+
+        return_url = f"https://{settings.FRONTEND_DOMAIN}/payment/success"
+
+        gc_result = await gc_service.create_deal(
+            user=user,
+            product=product,
+            return_url=return_url
+        )
+
+        payment_link = gc_result.get("payment_link")
+        deal_number = gc_result.get("deal_number")
+
+        if not payment_link or not deal_number:
+            raise Exception("GetCourse response invalid")
+
+    except Exception as e:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Payment provider error: {e}")
 
 
     payment = await billing_repo.create_payment(
@@ -37,9 +56,8 @@ async def checkout(
         product_id=product.id,
         amount=product.price,
         provider="getcourse",
-        external_id=gc_deal_number
+        external_id=deal_number
     )
-
 
     return {
         "success": True,
