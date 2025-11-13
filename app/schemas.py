@@ -463,3 +463,7 @@ class UserSubscriptionDetailResponse(BaseModel):
     plan: Optional[SubscriptionPlanResponse] = None
     available_models: List[AvailableModel]
     usage: SubscriptionUsage
+
+
+class TranscribeResponse(BaseModel):
+    text: str

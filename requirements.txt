@@ -33,3 +33,4 @@ asyncpg
 qrcode[pil]
 alembic
 psycopg2-binary
+openai
