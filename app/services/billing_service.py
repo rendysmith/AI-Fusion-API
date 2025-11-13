@@ -160,33 +160,32 @@ class Billing():
         except Exception as e:
             return {"error": str(e)}
 
-if "__main__" == __name__:
-    bl = Billing()
-    user_email = 'ritmorica@gmail.com'
-
-
-    offer_code = "fr01"
-    a = asyncio.run(bl.create_getcourse_payment(user_email,
-                                                offer_code,
-                                                "100",
-                                                'Тестовая покупка'))
-    input(a)
+# if "__main__" == __name__:
+#     bl = Billing()
+#     user_email = 'ritmorica@gmail.com'
 #
-#     deal_id = "753372837"
-
-    datas = {
-        'action': 'add',
-        'result': {'deal_id': 753398816,
-                   'deal_number': 28,
-                   'error': False,
-                   'error_message': '',
-                   'payment_link': 'https://viraltech.getcourse.ru/sales/shop/dealPay/id/753398816/hash/e45cb89d9a4d59471bc2631b92acfe64',
-                   'success': True,
-                   'user_id': 477148980,
-                   'user_status': 'added'},
-        'success': True}
-
-    deal_number = datas['result']['deal_number']
-    b = asyncio.run(bl.check_deal_status(deal_number, user_email))
-    print(b)
+#
+#     offer_code = "fr01"
+#     a = asyncio.run(bl.create_getcourse_payment(user_email,
+#                                                 offer_code,
+#                                                 "100",
+#                                                 'Тестовая покупка'))
+# #
+# #     deal_id = "753372837"
+#
+#     datas = {
+#         'action': 'add',
+#         'result': {'deal_id': 753398816,
+#                    'deal_number': 28,
+#                    'error': False,
+#                    'error_message': '',
+#                    'payment_link': 'https://viraltech.getcourse.ru/sales/shop/dealPay/id/753398816/hash/e45cb89d9a4d59471bc2631b92acfe64',
+#                    'success': True,
+#                    'user_id': 477148980,
+#                    'user_status': 'added'},
+#         'success': True}
+#
+#     deal_number = datas['result']['deal_number']
+#     b = asyncio.run(bl.check_deal_status(deal_number, user_email))
+#     print(b)
 
