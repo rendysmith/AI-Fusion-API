@@ -10,6 +10,28 @@ from app.dependencies import (
 )
 
 
+
+
+router = APIRouter(
+    prefix="/subscription-plans",
+    tags=["Subscription Plans"]
+)
+
+@router.get(
+    "",
+    response_model=List[schemas.SubscriptionPlanResponse],
+    summary="Get all ACTIVE subscription plans"
+)
+async def get_public_subscription_plans(
+    repo: SubscriptionPlanRepository = Depends(get_subscription_plan_repository)
+):
+    """(GET /subscription-plans)
+    Получить список всех АКТИВНЫХ планов для витрины.
+    """
+
+    return await repo.get_all(only_active=True)
+
+
 admin_router = APIRouter(
     prefix="/admin/subscription-plans",
     tags=["Admin: Subscription Plans"],
@@ -25,7 +47,7 @@ async def get_all_subscription_plans(
     repo: SubscriptionPlanRepository = Depends(get_subscription_plan_repository)
 ):
 
-    return await repo.get_all()
+    return await repo.get_all(only_active=False)
 
 @admin_router.post(
     "",

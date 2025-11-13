@@ -27,9 +27,14 @@ class SubscriptionPlanRepository:
             result = await session.execute(stmt)
             return result.scalars().first()
 
-    async def get_all(self) -> List[SubscriptionPlan]:
+    async def get_all(self, only_active: bool = False) -> List[SubscriptionPlan]:
+
         async with self.session_factory() as session:
             stmt = select(SubscriptionPlan).order_by(asc(SubscriptionPlan.sort_order))
+
+            if only_active:
+                stmt = stmt.where(SubscriptionPlan.is_active == True)
+
             result = await session.execute(stmt)
             return result.scalars().all()
 

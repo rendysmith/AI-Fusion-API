@@ -309,6 +309,9 @@ class SubscriptionPlanBase(BaseModel):
     description: str
     price: int = Field(..., ge=0)
     credits_granted: int = Field(..., ge=0)
+
+    concurrent_generation_limit: int = Field(..., ge=1)
+
     sort_order: int = 0
     is_active: bool
 
@@ -329,6 +332,7 @@ class SubscriptionPlanUpdate(BaseModel):
     price: Optional[int] = Field(None, ge=0)
     credits_granted: Optional[int] = Field(None, ge=0)
     concurrent_generation_limit: Optional[int] = Field(None, ge=1)
+
     sort_order: Optional[int] = None
     is_active: Optional[bool | int] = None
 
@@ -344,11 +348,6 @@ class SubscriptionPlanResponse(SubscriptionPlanBase):
     id: int
     created_at: datetime
     updated_at: datetime
-
-
-    @field_serializer('is_active')
-    def serialize_is_active(self, value: bool) -> int:
-        return 1 if value else 0
 
     model_config = ConfigDict(from_attributes=True)
 

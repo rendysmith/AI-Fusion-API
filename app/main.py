@@ -13,6 +13,7 @@ from starlette.responses import HTMLResponse
 from app.database.base import Base
 from app.database.main_models import User
 from app.database.repositories.ai_model_repository import AiModelRepository
+from app.database.repositories.plan_access_repository import PlanAccessRepository
 from app.database.repositories.task_repository import TaskRepository
 from app.database.engine import engine
 from app import schemas
@@ -92,6 +93,7 @@ app.include_router(ai_models_router.admin_router)
 app.include_router(templates_router.router)
 app.include_router(templates_router.admin_router)
 app.include_router(plans_router.admin_router)
+app.include_router(plans_router.router)
 app.include_router(plan_access_router.admin_router)
 app.include_router(admin_users_router.admin_router)
 
@@ -141,7 +143,8 @@ async def generate(
         user: User = AUTH_DEPENDENCY,
         ai_model_repo: AiModelRepository = Depends(dependencies.get_ai_model_repository),
         user_repo: UserRepository = Depends(dependencies.get_user_repository),
-        task_repo: TaskRepository = Depends(dependencies.get_task_repository)
+        task_repo: TaskRepository = Depends(dependencies.get_task_repository),
+        plan_access_repo: PlanAccessRepository = Depends(dependencies.get_plan_access_repository)
 ):
 
     s3_client = request.app.state.s3_client
@@ -151,7 +154,8 @@ async def generate(
         ai_model_repo=ai_model_repo,
         user_repo=user_repo,
         s3_client=s3_client,
-        task_repo=task_repo
+        task_repo=task_repo,
+        plan_access_repo=plan_access_repo
     )
 
     task_id, task_message_body, new_balance = await service.prepare_generation_task(request_data.params)

@@ -11,6 +11,7 @@ from app import schemas
 from app.database.billing_models import AiModel
 from app.database.main_models import User, Price
 from app.database.repositories.ai_model_repository import AiModelRepository
+from app.database.repositories.plan_access_repository import PlanAccessRepository
 from app.database.repositories.task_repository import TaskRepository
 from app.database.repositories.user_repository import UserRepository
 
@@ -30,13 +31,15 @@ class GenerationService:
             ai_model_repo: AiModelRepository,
             user_repo: UserRepository,
             s3_client: aiobotocore.client.BaseClient,
-            task_repo: TaskRepository
+            task_repo: TaskRepository,
+            plan_access_repo: PlanAccessRepository
     ):
         self.user = user
         self.ai_model_repo = ai_model_repo
         self.user_repo = user_repo
         self.s3_client = s3_client
         self.task_repo = task_repo
+        self.plan_access_repo = plan_access_repo
 
     async def prepare_generation_task(
             self, model_params: AnyModelParams
@@ -62,7 +65,22 @@ class GenerationService:
                 detail=f"Concurrent generation limit reached ({limit}). Please wait."
             )
 
+
         model_name = model_params.model_name
+
+        available_models = await self.plan_access_repo.get_models_for_plan(active_plan.id)
+
+        is_allowed = False
+        for model in available_models:
+            if model.slug == model_name:
+                is_allowed = True
+                break
+
+        if not is_allowed:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=f"Model '{model_name}' is not available for your current subscription plan ('{active_plan.slug}')."
+            )
 
         processed_params = await process_and_upload_images(
             model_params=model_params,
