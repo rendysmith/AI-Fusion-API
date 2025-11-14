@@ -47,7 +47,7 @@ from .ai_model import (
     AiModelResponse
 )
 
-# --- template.py ---
+
 from .template import (
     VideoTemplateBase,
     VideoTemplateCreate,
@@ -55,7 +55,7 @@ from .template import (
     VideoTemplateResponse
 )
 
-# --- plan.py ---
+
 from .plan import (
     PlanSchema,
     SubscriptionSchema,
@@ -63,10 +63,10 @@ from .plan import (
     SubscriptionPlanCreate,
     SubscriptionPlanUpdate,
     SubscriptionPlanResponse,
-    AdminSubscriptionPlanResponse
+    AdminSubscriptionPlanResponse,
 )
 
-# --- subscription.py ---
+
 from .subscription import (
     SubscriptionDetailResponse,
     UserSubscriptionDetailResponse,
@@ -113,4 +113,10 @@ from .billing import (
     PaymentStatusResponse,
     CanceledSubscriptionResponse,
     InvoiceResponse
+)
+
+from .plan_access import (
+    PlanModelAccessCreate,
+    PlanModelAccessBase,
+    PlanModelAccessResponse
 )
