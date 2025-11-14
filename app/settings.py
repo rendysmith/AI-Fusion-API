@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     GETCOURSE_API_KEY: str
     GETCOURSE_ACCOUNT_NAME: str
 
+    FRONTEND_DOMAIN: str
+
     KIE_AI: str
 
     OPENAI_API_KEY: str
