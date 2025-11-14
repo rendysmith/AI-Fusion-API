@@ -152,7 +152,7 @@ def upgrade() -> None:
         sa.Column('settings', postgresql.JSONB)
     )
 
-    # Вставь сюда ВСЕ модели, которые у тебя есть в коде (schemas.py)
+    # Вставь сюда ВСЕ модели, которые у тебя есть в коде (__init__.py)
     # и которые могут быть в 'generation_tasks'
     op.bulk_insert(ai_models_table,
                    [

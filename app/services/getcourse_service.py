@@ -6,7 +6,6 @@ from typing import Dict, Any
 
 from app.database.main_models import User
 from app.database.billing_models import Product
-from app.settings import settings
 
 logger = logging.getLogger(__name__)
 

@@ -116,11 +116,16 @@ class SubscriptionRepository:
     async def activate_subscription(self, user_id: int, plan_id: int):
 
         async with self.session_factory() as session:
+            plan = await session.get(SubscriptionPlan, plan_id)
+            if not plan:
+                raise ValueError(f"Plan {plan_id} not found")
+
             await session.execute(
                 update(UserSubscription)
                 .where(UserSubscription.user_id == user_id, UserSubscription.status == 'active')
                 .values(status='cancelled')
             )
+
 
             new_sub = UserSubscription(
                 id=f"sub_{user_id}_{int(datetime.now().timestamp())}",
@@ -132,6 +137,15 @@ class SubscriptionRepository:
                 current_period_end=datetime.now(timezone.utc) + timedelta(days=30)
             )
             session.add(new_sub)
+
+
+            if plan.credits_granted > 0:
+                await session.execute(
+                    update(User)
+                    .where(User.id == user_id)
+                    .values(balance=User.balance + plan.credits_granted)
+                )
+
             await session.commit()
 
     async def cancel_subscription(self, user_id: int) -> Optional[UserSubscription]:

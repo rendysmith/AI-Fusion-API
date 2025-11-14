@@ -13,6 +13,7 @@ from app.database.repositories.circuit_breaker_repository import CircuitBreakerR
 from app.database.engine import async_session_factory
 from app.database.repositories.plan_access_repository import PlanAccessRepository
 from app.database.repositories.plan_repository import SubscriptionPlanRepository
+from app.database.repositories.product_repository import ProductRepository
 from app.database.repositories.qr_session_repository import QrSessionRepository
 from app.database.repositories.subscription_repository import SubscriptionRepository
 from app.database.repositories.task_repository import TaskRepository
@@ -158,7 +159,7 @@ def get_billing_service(
 
 
 def get_getcourse_service() -> GetCourseService:
-  
+
     if not settings.GETCOURSE_API_KEY or not settings.GETCOURSE_ACCOUNT_NAME:
         logging.warning("GetCourse .env vars not set. Checkout will fail.")
         return GetCourseService(api_key="dummy", account_name="dummy")
@@ -167,3 +168,7 @@ def get_getcourse_service() -> GetCourseService:
         api_key=settings.GETCOURSE_API_KEY,
         account_name=settings.GETCOURSE_ACCOUNT_NAME
     )
+
+
+def get_product_repository() -> ProductRepository:
+    return ProductRepository(async_session_factory)
