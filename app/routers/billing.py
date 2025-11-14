@@ -41,9 +41,9 @@ async def checkout(
         )
 
         payment_link = gc_result.get("payment_link")
-        deal_number = gc_result.get("deal_number")
+        deal_id = gc_result.get("deal_id")
 
-        if not payment_link or not deal_number:
+        if not payment_link or not deal_id:
             raise Exception("GetCourse response invalid")
 
     except Exception as e:
@@ -56,7 +56,7 @@ async def checkout(
         product_id=product.id,
         amount=product.price,
         provider="getcourse",
-        external_id=deal_number
+        external_id=deal_id
     )
 
     return {
