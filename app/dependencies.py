@@ -1,8 +1,10 @@
 import logging
 
+import aiohttp
 from fastapi import Depends, HTTPException, Security
 from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from starlette import status
+from fastapi import Request
 
 from app.database.main_models import User
 from app.database.redis_db import get_redis_client
@@ -78,6 +80,10 @@ def get_analytics_repository() -> AnalyticsRepository:
     return AnalyticsRepository(async_session_factory)
 
 
+def get_http_session(request: Request) -> aiohttp.ClientSession:
+    """Достает "вечный" ClientSession из app.state."""
+    return request.app.state.http_session
+
 def get_telegram_token_repository() -> TelegramTokenRepository:
     return TelegramTokenRepository(async_session_factory)
 
@@ -143,8 +149,14 @@ def get_plan_access_repository() -> PlanAccessRepository:
     return PlanAccessRepository(async_session_factory)
 
 
-def get_subscription_repository() -> SubscriptionRepository:
-    return SubscriptionRepository(async_session_factory)
+def get_subscription_repository(
+    plan_repo: SubscriptionPlanRepository = Depends(get_subscription_plan_repository)
+) -> SubscriptionRepository:
+
+    return SubscriptionRepository(
+        session_factory=async_session_factory,
+        plan_repo=plan_repo
+    )
 
 
 def get_billing_repository() -> BillingRepository:
@@ -158,15 +170,17 @@ def get_billing_service(
     return BillingService(user_repo=user_repo, sub_repo=sub_repo)
 
 
-def get_getcourse_service() -> GetCourseService:
+def get_getcourse_service(session: aiohttp.ClientSession = Depends(get_http_session)) -> GetCourseService:
 
     if not settings.GETCOURSE_API_KEY or not settings.GETCOURSE_ACCOUNT_NAME:
         logging.warning("GetCourse .env vars not set. Checkout will fail.")
-        return GetCourseService(api_key="dummy", account_name="dummy")
+        pass
 
     return GetCourseService(
         api_key=settings.GETCOURSE_API_KEY,
-        account_name=settings.GETCOURSE_ACCOUNT_NAME
+        account_name=settings.GETCOURSE_ACCOUNT_NAME,
+        admin_email=settings.GETCOURSE_ADMIN_EMAIL,
+        client=session
     )
 
 

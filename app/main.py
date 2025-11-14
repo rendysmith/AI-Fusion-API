@@ -1,6 +1,7 @@
 import json
 import logging
 
+import aiohttp
 from aiobotocore.session import get_session
 from fastapi import FastAPI, Depends, HTTPException, Request
 from contextlib import asynccontextmanager
@@ -36,6 +37,7 @@ from app.routers import admin_users as admin_users_router
 from app.routers import transcribe as transcribe_router
 from app.routers import billing as billing_router
 from app.routers import webhooks as webhooks_router
+from app.routers import products as products_router
 
 import app.database.main_models
 import app.database.analytics_models
@@ -74,7 +76,11 @@ async def lifespan(app: FastAPI):
             app.state.sqs_client = sqs_client
             logging.info("Successfully connected to Yandex Message Queue")
 
-            yield
+            async with aiohttp.ClientSession() as http_session:
+                app.state.http_session = http_session
+                logging.info("Successfully created global aiohttp.ClientSession")
+
+                yield
 
 
 AUTH_DEPENDENCY = Depends(get_current_user)
@@ -101,7 +107,8 @@ app.include_router(admin_users_router.admin_router)
 app.include_router(transcribe_router.router)
 app.include_router(billing_router.router)
 app.include_router(webhooks_router.router)
-
+app.include_router(products_router.router)
+app.include_router(products_router.admin_router)
 
 app.add_middleware(
     CORSMiddleware,

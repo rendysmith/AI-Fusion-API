@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone, timedelta
 
 from sqlalchemy import select, update
@@ -8,13 +9,18 @@ from typing import Optional
 from sqlalchemy.orm import joinedload
 
 from app.database.main_models import User
+from app.database.repositories.plan_repository import SubscriptionPlanRepository
 from app.database.subscription_models import UserSubscription, SubscriptionPlan
 from app.schemas import UpdateSubscriptionRequest
 
 
 class SubscriptionRepository:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+    def __init__(self,
+                 session_factory: async_sessionmaker[AsyncSession],
+                 plan_repo: SubscriptionPlanRepository
+                 ):
         self.session_factory = session_factory
+        self.plan_repo = plan_repo
 
     async def get_active_subscription_by_user_id(self, user_id: int) -> Optional[UserSubscription]:
 
@@ -148,16 +154,42 @@ class SubscriptionRepository:
 
             await session.commit()
 
-    async def cancel_subscription(self, user_id: int) -> Optional[UserSubscription]:
-
+    async def cancel_subscription(self, user: User) -> Optional[UserSubscription]:
+        """
+        (POST /billing/cancel)
+        1. Находит активную подписку и ОТМЕНЯЕТ ее.
+        2. НАЗНАЧАЕТ юзеру 'free' план (без начисления кредитов).
+        """
         async with self.session_factory() as session:
-
-            active_sub = await self.get_active_subscription_with_plan(user_id)
-            if not active_sub:
+            active_sub = await self.get_active_subscription_with_plan(user.id)
+            if not active_sub or active_sub.plan.slug == 'free':
                 return None
+
 
             active_sub.status = "cancelled"
 
+
+            free_plan = await self.plan_repo.get_by_slug("free")
+            if not free_plan:
+                logging.error(f"Cannot cancel subscription for user {user.id}: 'free' plan not found!")
+                await session.commit()
+                return active_sub
+
+
+            new_free_sub = UserSubscription(
+                id=f"sub_{user.id}_{int(datetime.now().timestamp())}",
+                user_id=user.id,
+                plan_id=free_plan.id,
+                status='active',
+                is_manual=True,
+                current_period_start=datetime.now(timezone.utc),
+                current_period_end=datetime.now(timezone.utc) + timedelta(days=365 * 100)
+            )
+            session.add(new_free_sub)
+
             await session.commit()
-            await session.refresh(active_sub)
-            return active_sub
+
+
+            await session.refresh(new_free_sub)
+            await session.refresh(new_free_sub, attribute_names=['plan'])
+            return new_free_sub
