@@ -1,5 +1,8 @@
 import base64
 import json
+import time
+from datetime import datetime, timedelta
+
 import httpx
 import logging
 from typing import Dict, Any
@@ -7,12 +10,16 @@ from typing import Dict, Any
 from app.database.main_models import User
 from app.database.billing_models import Product
 
+from app.database.repositories.billing_repository import BillingRepository
+
+
 logger = logging.getLogger(__name__)
 
 
 class GetCourseService:
     def __init__(self, api_key: str, account_name: str):
         self.api_key = api_key
+        self.account_name = account_name
         self.deals_url = f"https://{account_name}.getcourse.ru/pl/api/deals"
 
     async def _send_request(self, url: str, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -52,7 +59,7 @@ class GetCourseService:
                 logger.error(f"GetCourse General Error: {e}")
                 raise e
 
-    async def create_deal(self, user: User, product: Product, return_url: str) -> Dict[str, Any]:
+    async def create_deal(self, admin_email, ,user: User, product: Product, return_url: str) -> Dict[str, Any]:
         """
         (POST /billing/checkout)
         Создает "сделку" (заказ) в GetCourse и возвращает ссылку на оплату.
@@ -66,7 +73,7 @@ class GetCourseService:
 
         params = {
             "user": {
-                "email": user.email,
+                "email": admin_email,
                 "first_name": user.display_name or user.username or f"User {user.id}"
             },
             "system": {
@@ -90,3 +97,102 @@ class GetCourseService:
             raise Exception("GetCourse did not return 'payment_link' or 'deal_number'")
 
         return result
+
+    async def check_deal_status(self, user_id, admin_email, max_wait_time=60):
+        """
+        Запрашивает экспорт заказов и ожидает его готовности.
+
+        :param account_name: Имя аккаунта GetCourse
+        :param secret_api_key: Секретный API-ключ
+        :param admin_email: Email администратора с сайта getcourse (о чего имени формируется счет)
+        :param payed_at: Начальная дата оплаты счета
+        :param max_wait_time: Максимальное время ожидания в секундах (по умолчанию 60)
+        :return: Словарь с данными заказов или None в случае ошибки/таймаута
+        """
+        now = datetime.now()
+        from_time = (now - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+        #current_time_str = now.strftime("%Y-%m-%d %H:%M:%S")
+
+        url = f'https://{self.account_name}.getcourse.ru/pl/api/account/deals'
+        params = {
+            'key': self.api_key,
+            'user_email': admin_email,
+            'payed_at[from]': from_time,
+        }
+
+        # 1. Инициируем экспорт
+        # response = requests.get(url, params=params)
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, params=params)
+            init_data = response.json()
+            print("Ответ на инициацию экспорта:")
+            # print(json.dumps(init_data, indent=2, ensure_ascii=False))
+
+            if not init_data.get('success'):
+                print("Ошибка при инициации экспорта:", init_data.get('error_message'))
+                return None
+
+            export_id = init_data['info']['export_id']
+            print(f"Получен export_id: {export_id}")
+
+        # 2. Ждем готовности файла
+        export_url = f"https://{self.account_name}.getcourse.ru/pl/api/account/exports/{export_id}"
+        start_time = time.time()
+
+        while time.time() - start_time < max_wait_time:
+            # response = requests.get(export_url, params={'key': secret_api_key})
+            async with httpx.AsyncClient() as client:
+                response = await client.get(export_url, params={'key': self.api_key})
+                export_data = response.json()
+                print("Ответ на проверку готовности:")
+                # print(json.dumps(export_data, indent=2, ensure_ascii=False))
+                #pprint(export_data)
+
+                if export_data.get('success') and not export_data.get('error'):
+                    # Успешно получены данные
+                    new_export_data = []
+                    fields = export_data['info']['fields']
+                    for item in export_data['info']['items']:
+                        temp_dict = {}
+                        for k, i in enumerate(item):
+                            temp_dict[fields[k]] = i
+                        new_export_data.append(temp_dict)
+
+                    if len(new_export_data) == 0:
+                        return
+
+                    for nwd in new_export_data():
+                        if nwd['Оплачен'] == 'Да':
+                            BR = BillingRepository()
+                            payment = await BR.get_payment_by_external_id(nwd['Номер заказа'])
+
+
+
+                            if payment.user_id == user_id:
+                                await BR.complete_payment(payment.internal_id)
+                                await BR.create_invoice(payment)
+
+
+
+
+
+
+
+
+
+
+
+
+                    return new_export_data
+
+            if export_data.get('error') and export_data.get('error_code') == 909:  # "Файл еще не создан"
+                print("Файл еще не готов, ждем...")
+                time.sleep(5)  # Ждем 5 секунд перед повторным запросом
+                continue
+
+            # Любая другая ошибка
+            print("Ошибка при получении экспорта:", export_data.get('error_message'))
+            return None
+
+        print("Таймаут ожидания готовности файла.")
+        return None
