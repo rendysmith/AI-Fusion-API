@@ -11,6 +11,7 @@ from app.database.main_models import User
 from app.database.billing_models import Product
 
 from app.database.repositories.billing_repository import BillingRepository
+from app.database.repositories.user_repository import UserRepository
 
 
 logger = logging.getLogger(__name__)
@@ -163,14 +164,44 @@ class GetCourseService:
 
                     for nwd in new_export_data():
                         if nwd['Оплачен'] == 'Да':
+                            external_id = nwd['ID заказа']
+
                             BR = BillingRepository()
-                            payment = await BR.get_payment_by_external_id(nwd['Номер заказа'])
+                            payment = await BR.get_payment_by_external_id(external_id)
+
+                            if payment:
+                                status = payment.status
+                                amount = payment.amount
+                                user_id = payment.user_id
+                                internal_id = payment.internal_id
+                                if status == 'pending': #Если статус ордера = pending
+                                    await BR.complete_payment(internal_id) #меняем на completed
+
+                                    #Получаем кол-во кредитов у пользователя
+                                    UR = UserRepository()
+                                    await UR.refund_balance(user_id, amount)
 
 
 
-                            if payment.user_id == user_id:
-                                await BR.complete_payment(payment.internal_id)
-                                await BR.create_invoice(payment)
+
+
+
+
+                                    #
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
