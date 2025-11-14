@@ -181,39 +181,6 @@ class GetCourseService:
                                     UR = UserRepository()
                                     await UR.refund_balance(user_id, amount)
 
-
-
-
-
-
-
-                                    #
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
                     return new_export_data
 
             if export_data.get('error') and export_data.get('error_code') == 909:  # "Файл еще не создан"
