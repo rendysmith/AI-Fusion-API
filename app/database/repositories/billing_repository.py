@@ -21,15 +21,18 @@ class BillingRepository:
             return result.scalars().all()
 
     async def create_payment(self, user_id: int, product_id: int, amount: int, provider: str,
-                             external_id: str) -> Payment:
+                             external_id: Any) -> Payment:
         async with self.session_factory() as session:
+
+            external_id_str = str(external_id) if external_id is not None else None
+
             payment = Payment(
                 internal_id=f"pay_{uuid.uuid4().hex}",
                 user_id=user_id,
                 product_id=product_id,
                 amount=amount,
                 provider=provider,
-                external_payment_id=external_id,
+                external_payment_id=external_id_str,
                 status="pending"
             )
             session.add(payment)
@@ -37,9 +40,18 @@ class BillingRepository:
             await session.refresh(payment)
             return payment
 
-    async def get_payment_by_external_id(self, external_id: str) -> Optional[Payment]:
+    async def get_payment_by_external_id(
+            self,
+            external_id: Any,
+            provider: str
+    ) -> Optional[Payment]:
+        external_id_str = str(external_id) if external_id is not None else None
+
         async with self.session_factory() as session:
-            stmt = select(Payment).where(Payment.external_payment_id == external_id)
+            stmt = select(Payment).where(
+                Payment.external_payment_id == external_id_str,
+                Payment.provider == provider
+            )
             result = await session.execute(stmt)
             return result.scalars().first()
 

@@ -19,11 +19,21 @@ logger = logging.getLogger(__name__)
 
 
 class GetCourseService:
-    def __init__(self, api_key: str, account_name: str, admin_email: str, client: aiohttp.ClientSession):
+    def __init__(
+            self,
+            api_key: str,
+            account_name: str,
+            admin_email: str,
+            client: aiohttp.ClientSession,
+            billing_repo: BillingRepository,
+            billing_service: BillingService
+    ):
         self.api_key = api_key
         self.account_name = account_name
         self.admin_email = admin_email
         self.client = client
+        self.billing_repo = billing_repo
+        self.billing_service = billing_service
         self.deals_url = f"https://{account_name}.getcourse.ru/pl/api/deals"
         self.export_url = f"https://{account_name}.getcourse.ru/pl/api/account/deals"
         self.export_status_url = f"https://{account_name}.getcourse.ru/pl/api/account/exports"
@@ -58,7 +68,7 @@ class GetCourseService:
             "user": {"email": self.admin_email, "first_name": user.display_name or user.username or f"User {user.id}"},
             "system": {"refresh_if_exists": 1, "return_payment_link": 1, "return_deal_number": 1,
                        "return_url": return_url},
-            "deal": {"offer_code": offer_code, "deal_status": "new"}
+            "deal": {"offer_code": offer_code, "deal_cost": str(product.price / 100), "deal_status": "new"}
         }
         result = await self._send_request(self.deals_url, "add", params)
         if "payment_link" not in result or "deal_number" not in result:
@@ -67,14 +77,10 @@ class GetCourseService:
 
     async def check_pending_deals(
             self,
-            billing_repo: BillingRepository,
-            billing_service: BillingService,
             max_wait_time: int = 60
+
     ):
-        """
-        (CRON / 5 мин)
-        "Страховка" от потерянных вебхуков.
-        """
+
         now = datetime.now()
         from_time = (now - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -92,7 +98,9 @@ class GetCourseService:
             if not external_id or deal.get('Оплачен') != 'Да':
                 continue
 
-            payment = await billing_repo.get_payment_by_external_id(external_id)
+
+            payment = await self.billing_repo.get_payment_by_external_id(external_id,
+                                                                         "getcourse")
 
             if not payment:
                 logger.warning(
@@ -103,18 +111,18 @@ class GetCourseService:
                 logger.warning(
                     f"CheckDeals: Найден 'pending' платеж {payment.internal_id} (Deal: {external_id}). Активируем...")
 
-                product = await billing_repo.get_product(payment.product_id)
+
+                product = await self.billing_repo.get_product(payment.product_id)
                 if not product:
                     logger.error(
                         f"CheckDeals: Не найден Product {payment.product_id} для Payment {payment.internal_id}. Пропускаем.")
                     continue
 
 
-                await billing_service.grant_product_rewards(payment.user_id, product)
+                await self.billing_service.grant_product_rewards(payment.user_id, product)
 
-
-                await billing_repo.complete_payment(payment.internal_id)
-                await billing_repo.create_invoice(payment)
+                await self.billing_repo.complete_payment(payment.internal_id)
+                await self.billing_repo.create_invoice(payment)
 
                 processed_count += 1
 

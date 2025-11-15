@@ -77,42 +77,12 @@ async def get_user_generations_history(
         limit=pagination.limit,
     )
 
-
-
-@router.get("/balance", response_model=schemas.UserBalanceResponse)
-async def get_user_balance(
-        user: User = Depends(get_current_user),
-):
-
-    return schemas.UserBalanceResponse(
-        balance=float(user.balance),
-        plan="pro",
-        generations_left=50
-    )
-
-
 @router.get("/profile", response_model=schemas.UserProfileResponse)
 async def get_user_profile(
         user: User = Depends(get_current_user)
 ):
 
-    plan = schemas.PlanSchema(id=1, name="Free", slug="free", generationsPerMonth=10)
-    sub = schemas.SubscriptionSchema(status="active", currentPeriodEnd=datetime.now())
-
-    return schemas.UserProfileResponse(
-        uid=user.firebase_uid,
-        email=user.email,
-        username=user.username,
-        display_name=user.display_name,
-        photo_url=user.photo_url,
-        balance=float(user.balance),
-        is_admin=user.is_admin,
-        current_plan=plan,
-        subscription=sub,
-        telegram_id=user.telegram_id,
-        telegram_username=None,
-    )
-
+    return schemas.UserProfileResponse.model_validate(user)
 
 
 @router.put("/profile", response_model=schemas.UserProfileResponse)
@@ -124,7 +94,6 @@ async def create_or_update_user_profile(
         sub_repo: SubscriptionRepository = Depends(get_subscription_repository),
         authorization: str = Header(...)
 ):
-
     try:
 
         token = authorization.split("Bearer ")[1]
@@ -139,14 +108,12 @@ async def create_or_update_user_profile(
 
     existing_user = await user_repo.get_by_firebase_uid(firebase_uid)
 
-
     if payload.username:
         if existing_user and existing_user.firebase_uid != firebase_uid:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Username '{payload.username}' already taken."
             )
-
 
     try:
         user = await user_repo.create_or_update_profile(
@@ -159,41 +126,20 @@ async def create_or_update_user_profile(
 
     if existing_user is None:
         logging.info(f"New user detected (UID: {firebase_uid}). Assigning 'free' plan.")
-
         free_plan = await plan_repo.get_by_slug("free")
-
         if free_plan:
             try:
-
                 await sub_repo.create_default_subscription(user, free_plan)
 
-                await user_repo.session_factory().refresh(user)
-
-                logging.info(f"Assigned 'free' plan with {free_plan.credits_granted} credits.")
+                await user_repo.session_factory().refresh(user, attribute_names=['balance', 'subscription'])
             except Exception as e:
-                logging.error(f"Failed to assign default subscription for user {firebase_uid}: {e}")
+                logging.error(f"Failed to assign default subscription...: {e}")
         else:
-            logging.warning("Could not find 'free' plan in database to assign to new user.")
+            logging.warning("Could not find 'free' plan...")
 
-    subscription = await sub_repo.get_active_subscription_by_user_id(user.id)
-    current_plan = None
-    if subscription:
+    user_with_plan = await user_repo.get_by_firebase_uid(user.firebase_uid)
 
-        current_plan = await plan_repo.get_by_id(subscription.plan_id)
-
-
-    return schemas.UserProfileResponse(
-        uid=user.firebase_uid,
-        email=user.email,
-        username=user.username,
-        display_name=user.display_name,
-        photo_url=user.photo_url,
-        balance=float(user.balance),
-        is_admin=user.is_admin,
-        current_plan=current_plan,
-        subscription=subscription,
-        telegram_id=user.telegram_id
-    )
+    return schemas.UserProfileResponse.model_validate(user_with_plan)
 
 
 @router.get("/is-admin", response_model=schemas.IsAdminResponse)
