@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from pydantic import BaseModel
@@ -86,10 +87,14 @@ async def link_telegram_account(
         phantom_email = f"{data.telegram_id}@{settings.FIREBASE_PHANTOM_EMAIL_DOMAIN}"
 
         try:
-            fb_user = auth.create_user(email=phantom_email, email_verified=True)
+            fb_user = await asyncio.to_thread(
+                auth.create_user,
+                email=phantom_email,
+                email_verified=True
+            )
             firebase_uid = fb_user.uid
         except auth.EmailAlreadyExistsError:
-            fb_user = auth.get_user_by_email(phantom_email)
+            fb_user = await asyncio.to_thread(auth.get_user_by_email, phantom_email)
             firebase_uid = fb_user.uid
 
         try:
@@ -121,7 +126,7 @@ async def link_telegram_account(
     if not firebase_uid:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to get Firebase UID")
 
-    custom_token = create_custom_token(firebase_uid)
+    custom_token = await asyncio.to_thread(create_custom_token, firebase_uid)
     await qr_repo.complete_session(data.session_id, custom_token)
 
     return {"status": "success", "detail": "Account linked."}

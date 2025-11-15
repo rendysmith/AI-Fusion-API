@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 
@@ -97,7 +98,8 @@ async def create_or_update_user_profile(
     try:
 
         token = authorization.split("Bearer ")[1]
-        decoded_token = verify_firebase_token(token)
+        decoded_token = await asyncio.to_thread(verify_firebase_token, token)
+
         firebase_uid = decoded_token.get("uid")
         email = decoded_token.get("email")
         if not firebase_uid:
