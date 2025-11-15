@@ -38,6 +38,7 @@ from app.routers import transcribe as transcribe_router
 from app.routers import billing as billing_router
 from app.routers import webhooks as webhooks_router
 from app.routers import products as products_router
+from app.routers import telegram as telegram_router
 
 import app.database.main_models
 import app.database.analytics_models
@@ -109,6 +110,7 @@ app.include_router(billing_router.router)
 app.include_router(webhooks_router.router)
 app.include_router(products_router.router)
 app.include_router(products_router.admin_router)
+app.include_router(telegram_router.router)
 
 app.add_middleware(
     CORSMiddleware,

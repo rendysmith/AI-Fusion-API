@@ -2,6 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 
+import aiohttp
 from fastapi import APIRouter, Depends, Query, Request, Header, HTTPException
 from typing import List, Optional
 
@@ -14,7 +15,7 @@ from app.database.repositories.plan_repository import SubscriptionPlanRepository
 from app.database.repositories.subscription_repository import SubscriptionRepository
 from app.database.repositories.user_repository import UserRepository
 from app.dependencies import get_current_user, get_task_repository, get_user_repository, \
-    get_subscription_plan_repository, get_subscription_repository, get_plan_access_repository
+    get_subscription_plan_repository, get_subscription_repository, get_plan_access_repository, get_http_session
 from app.database.repositories.task_repository import TaskRepository
 from app.services.firebase_service import verify_firebase_token
 
@@ -196,3 +197,32 @@ async def get_user_subscription(
         available_models=available_models_list,
         usage=usage
     )
+
+
+@router.get("/debug-egress", tags=["Debug"])
+async def debug_egress(
+        http_session: aiohttp.ClientSession = Depends(get_http_session)
+):
+    """
+    Проверяет, есть ли у контейнера ВЫХОД в интернет (Egress).
+    """
+    target_url = "https://www.google.com"
+    logging.info(f"DEBUG: Пытаюсь 'достучаться' до {target_url}...")
+
+    try:
+
+        async with http_session.get(target_url, timeout=5.0) as response:
+            logging.info(f"DEBUG: Успех! Статус от Google: {response.status}")
+            return {
+                "status": "SUCCESS",
+                "target": target_url,
+                "http_code": response.status
+            }
+    except Exception as e:
+
+        logging.error(f"DEBUG: ПРОВАЛ! Ошибка Egress: {e}")
+        return {
+            "status": "FAILED",
+            "target": target_url,
+            "error": str(e)
+        }

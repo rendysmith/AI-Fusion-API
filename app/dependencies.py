@@ -6,13 +6,14 @@ import aiohttp
 import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, Security, Request, status
 from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
+from sqlalchemy import update, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app import schemas
 from app.database.main_models import User
 from app.database.engine import async_session_factory
-from app.database.subscription_models import UserSubscription
+from app.database.subscription_models import UserSubscription, SubscriptionPlan
 from app.services.firebase_service import verify_firebase_token
 from app.settings import settings
 
@@ -169,6 +170,7 @@ async def get_current_user(
         plan_repo: SubscriptionPlanRepository = Depends(get_subscription_plan_repository),
         sub_repo: SubscriptionRepository = Depends(get_subscription_repository)
 ) -> User:
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -176,32 +178,28 @@ async def get_current_user(
     )
 
     try:
+
         decoded_token = await asyncio.to_thread(verify_firebase_token, token)
+
         firebase_uid = decoded_token.get("uid")
         email = decoded_token.get("email")
+
         if firebase_uid is None:
             raise credentials_exception
 
 
         user = await user_repo.get_by_firebase_uid(uid=firebase_uid)
 
-
         if user:
             return user
 
 
-
-        logging.info(f"New user detected (UID: {firebase_uid}). Lazy creating profile...")
-
         try:
-
             async with user_repo.session_factory() as session:
                 async with session.begin():
 
 
                     user_payload = schemas.UserProfileUpdateRequest()
-
-
                     stmt_insert_user = pg_insert(User).values(
                         firebase_uid=firebase_uid,
                         email=email,
@@ -212,13 +210,12 @@ async def get_current_user(
 
                     if user is None:
 
-                        logging.warning(f"Race condition detected for {firebase_uid}. Refetching...")
                         user = await user_repo.get_by_firebase_uid(uid=firebase_uid)
                         if user: return user
                         raise Exception("Failed to create or find user after race.")
 
-
-                    free_plan = await plan_repo.get_by_slug("free")
+                    stmt_find_plan = select(SubscriptionPlan).where(SubscriptionPlan.slug == "free")
+                    free_plan = (await session.execute(stmt_find_plan)).scalar_one_or_none()
 
                     if free_plan:
 
@@ -233,32 +230,32 @@ async def get_current_user(
                         )
                         session.add(new_sub)
 
-
                         if free_plan.credits_granted > 0:
-                            user.balance = user.balance + free_plan.credits_granted
-                            session.add(user)
-
-                        logging.info(f"Assigned 'free' plan with {free_plan.credits_granted} credits.")
+                            stmt_update_balance = (
+                                update(User)
+                                .where(User.id == user.id)
+                                .values(balance=free_plan.credits_granted)
+                            )
+                            await session.execute(stmt_update_balance)
 
                 await session.refresh(user, attribute_names=['subscription'])
                 if user.subscription:
                     await session.refresh(user.subscription, attribute_names=['plan'])
 
-            logging.info(f"Lazy registration complete for {firebase_uid}.")
             return user
 
         except IntegrityError as e:
-            logging.warning(f"Race condition (IntegrityError) during lazy registration for {firebase_uid}: {e}")
-
             user = await user_repo.get_by_firebase_uid(uid=firebase_uid)
             if user: return user
             raise credentials_exception
 
         except Exception as e:
-            logging.error(f"Critical error during lazy registration: {e}", exc_info=True)
             raise credentials_exception
 
     except ValueError:
+        raise credentials_exception
+
+    except Exception as e:
         raise credentials_exception
 
 

@@ -14,7 +14,7 @@ from app.database.repositories.telegram_token_repository import TelegramTokenRep
 from app.dependencies import get_user_repository, get_telegram_token_repository
 
 
-TELEGRAM_BOT_NAME = "viralix_start_bot"
+TELEGRAM_BOT_NAME = "Viralexai_bot"
 
 router = APIRouter(prefix="/auth/telegram", tags=["Telegram Auth"])
 
@@ -46,9 +46,9 @@ async def init_telegram_linking(
 
     return schemas.TelegramInitResponse(
         token=token,
-        expiresAt=expires_at,
-        botUrl=bot_url,
-        qrCode=qr_data_uri
+        expires_at=expires_at,
+        bot_url=bot_url,
+        qr_code=qr_data_uri
     )
 
 
@@ -68,10 +68,10 @@ async def get_telegram_linking_status(
 
     return schemas.TelegramStatusResponse(
         status=token_data.status,
-        expiresAt=token_data.expires_at,
-        telegramId=token_data.telegram_id,
-        telegramUsername=token_data.telegram_username,
-        linkedAt=token_data.updated_at if token_data.status == 'completed' else None
+        expires_at=token_data.expires_at,
+        telegram_id=token_data.telegram_id,
+        telegram_username=token_data.telegram_username,
+        linked_at=token_data.updated_at if token_data.status == 'completed' else None
     )
 
 
