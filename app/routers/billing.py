@@ -125,3 +125,28 @@ async def get_invoices(
 
     invoices = await billing_repo.get_user_invoices(user.id, limit, offset)
     return invoices
+
+
+@router.get(
+    "/subscription/details",
+    response_model=schemas.BillingSubscriptionDetailResponse,
+    summary="Get user's detailed subscription info + invoices"
+)
+async def get_subscription_details(
+        user: User = Depends(get_current_user),
+        billing_repo: BillingRepository = Depends(get_billing_repository)
+):
+
+
+    subscription = user.subscription
+
+    invoices = await billing_repo.get_user_invoices(user.id, limit=20, offset=0)
+
+    sub_dto = None
+    if subscription:
+        sub_dto = schemas.SubscriptionDetailResponse.model_validate(subscription)
+
+    return schemas.BillingSubscriptionDetailResponse(
+        subscription=sub_dto,
+        invoices=invoices
+    )

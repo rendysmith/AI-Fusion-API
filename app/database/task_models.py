@@ -1,5 +1,6 @@
 from sqlalchemy import Column, String, DateTime, func, Integer, Float, Text, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
 
 from app.database.base import Base
 
@@ -17,6 +18,8 @@ class GenerationTask(Base):
 
 
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+
+    user = relationship("User", lazy="joined")
 
     model_slug = Column(String(100), ForeignKey("ai_models.slug"), nullable=False, index=True)
     provider_job_id = Column(String(100), nullable=True, index=True)

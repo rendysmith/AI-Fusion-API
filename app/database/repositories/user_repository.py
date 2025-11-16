@@ -1,7 +1,9 @@
+import logging
 from decimal import Decimal
 from typing import Optional, Any, Sequence
 
 from sqlalchemy import update, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.future import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -43,16 +45,24 @@ class UserRepository(BaseRepository):
             result = await session.execute(stmt)
             return result.scalars().first()
 
-    async def link_telegram_id(self, user_id: int, telegram_id: int) -> User:
+    async def link_telegram_id(self, user_id: int,
+                               telegram_id: int) -> User | None:
 
         async with self.session_factory() as session:
-            stmt = update(User).where(User.id == user_id) \
-                .values(telegram_id=telegram_id) \
-                .returning(User)
+            try:
+                stmt = update(User).where(User.id == user_id) \
+                    .values(telegram_id=telegram_id) \
+                    .returning(User)
 
-            result = await session.execute(stmt)
-            await session.commit()
-            return result.scalars().one()
+                result = await session.execute(stmt)
+                await session.commit()
+                return result.scalars().one()
+
+            except IntegrityError as e:
+
+                await session.rollback()
+                logging.warning(f"Failed to link TG ID {telegram_id} to User {user_id}: {e}")
+                return None
 
     async def link_firebase_uid(self, user_id: int, uid: str, email: str):
 

@@ -1,6 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict
-from typing import Optional
+from typing import Optional, List
 from .subscription import SubscriptionDetailResponse
 
 class CheckoutRequest(BaseModel):
@@ -40,3 +40,20 @@ class InvoiceResponse(BaseModel):
     paid_at: Optional[datetime] = None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class BillingSubscriptionDetailResponse(BaseModel):
+
+    subscription: Optional[SubscriptionDetailResponse] = None
+    invoices: List[InvoiceResponse]
+
+
+class ErrorDetailInsufficientCredits(BaseModel):
+
+    status: int = 402
+    message: str = "Insufficient credits"
+    detail: str = "User balance is insufficient for this generation"
+    balance: float
+    cost: float
+    model: Optional[str] = None
+    plan: Optional[str] = None

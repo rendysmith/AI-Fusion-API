@@ -127,6 +127,13 @@ async def link_telegram_account(
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to get Firebase UID")
 
     custom_token = await asyncio.to_thread(create_custom_token, firebase_uid)
-    await qr_repo.complete_session(data.session_id, custom_token)
 
-    return {"status": "success", "detail": "Account linked."}
+
+    await qr_repo.complete_session(data.session_id, "completed_by_bot")
+
+
+    return {
+        "status": "success",
+        "detail": "Account linked.",
+        "custom_token": custom_token
+    }

@@ -37,3 +37,14 @@ class TelegramTokenRepository:
             )
             await session.execute(stmt)
             await session.commit()
+
+    async def fail_token(self, token: str):
+
+        async with self.session_factory() as session:
+            stmt = (
+                update(TelegramAuthToken)
+                .where(TelegramAuthToken.token == token)
+                .values(status='failed')
+            )
+            await session.execute(stmt)
+            await session.commit()

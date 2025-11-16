@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 
 import aiobotocore
 from fastapi import HTTPException
@@ -95,6 +95,21 @@ class GenerationService:
 
         new_balance = await self._deduct_funds(final_cost)
 
+        if new_balance is None:
+
+            error_payload = schemas.ErrorDetailInsufficientCredits(
+                balance=float(self.user.balance),
+                cost=final_cost,
+                model=model_name,
+                plan=active_plan.slug
+            )
+
+
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=error_payload.model_dump()
+            )
+
         task_id = str(uuid.uuid4())
         created_at = datetime.now(timezone.utc)
 
@@ -167,16 +182,9 @@ class GenerationService:
 
         return final_cost, prime_cost
 
-    async def _deduct_funds(self, amount: float) -> Decimal:
+    async def _deduct_funds(self, amount: float) -> Optional[Decimal]:
 
         new_balance = await self.user_repo.deduct_balance(
             user_id=self.user.id, amount=amount
         )
-
-        if new_balance is None:
-            raise HTTPException(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail=f"Insufficient funds. Required: {amount}. Please top up your balance.",
-            )
-
         return new_balance

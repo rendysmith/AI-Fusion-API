@@ -93,9 +93,12 @@ async def telegram_bot_webhook(
     if not user:
         return {"ok": False, "error": "User profile not found"}
 
+    linked_user = await user_repo.link_telegram_id(user.id, payload.telegram_id)
 
-    await user_repo.link_telegram_id(user.id, payload.telegram_id)
+    if linked_user is None:
 
+        await token_repo.fail_token(payload.token)
+        return {"ok": False, "error": "This Telegram account is already linked to another user."}
 
     await token_repo.complete_token(
         token=payload.token,

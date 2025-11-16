@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+from typing import List, Optional, Dict
 from .plan import AdminSubscriptionPlanResponse
 from .subscription import SubscriptionDetailResponse
 
@@ -45,3 +45,47 @@ class UpdateSubscriptionRequest(BaseModel):
 class UpdateSubscriptionResponse(BaseModel):
     subscription: SubscriptionDetailResponse
     success: bool = True
+
+
+class AdminGenerationTaskUser(BaseModel):
+
+    uid: str = Field(..., validation_alias="firebase_uid")
+    email: Optional[str] = None
+    username: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+
+class AdminGenerationTaskResponse(BaseModel):
+    id: str
+    user: AdminGenerationTaskUser
+    model_slug: str
+    status: str
+    error: Optional[str] = None
+    cost: float
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminGenerationListResponse(BaseModel):
+    generations: List[AdminGenerationTaskResponse]
+    total: int
+    page: int
+    limit: int
+
+
+class RevenueMetrics(BaseModel):
+    total: float
+    this_month: float
+    last_month: float
+
+
+class AdminMetricsResponse(BaseModel):
+    total_users: int
+    active_subscriptions: int
+    total_generations: int
+    generations_today: int
+    revenue: RevenueMetrics
+    model_usage: Dict[str, int]
+    plan_distribution: Dict[str, int]

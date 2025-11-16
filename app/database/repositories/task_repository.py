@@ -4,6 +4,7 @@ from sqlalchemy import select, update, func, desc
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import selectinload
 
 from app.database.task_models import GenerationTask
 
@@ -181,3 +182,35 @@ class TaskRepository:
             )
             count = await session.scalar(stmt)
             return count or 0
+
+    async def get_all_paginated(
+            self, page: int, limit: int, status: Optional[str] = None
+    ) -> Tuple[List[GenerationTask], int]:
+
+        offset = (page - 1) * limit
+
+        async with self.session_factory() as session:
+
+            stmt_tasks = select(GenerationTask)
+
+            where_conditions = []
+            if status:
+                where_conditions.append(GenerationTask.status == status)
+
+            stmt_tasks = (
+                stmt_tasks.where(*where_conditions)
+                .order_by(GenerationTask.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+                .options(
+                    selectinload(GenerationTask.user)
+                )
+            )
+            result_tasks = await session.execute(stmt_tasks)
+            tasks = result_tasks.scalars().unique().all()
+
+
+            stmt_count = select(func.count(GenerationTask.id)).where(*where_conditions)
+            total = (await session.scalar(stmt_count)) or 0
+
+            return tasks, total

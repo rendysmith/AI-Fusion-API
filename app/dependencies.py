@@ -9,6 +9,7 @@ from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from sqlalchemy import update, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
 from app.database.main_models import User
@@ -81,6 +82,11 @@ def get_task_repository() -> TaskRepository:
 def get_analytics_repository() -> AnalyticsRepository:
     return AnalyticsRepository(async_session_factory)
 
+
+async def get_async_session() -> AsyncSession:
+
+    async with async_session_factory() as session:
+        yield session
 
 def get_subscription_plan_repository() -> SubscriptionPlanRepository:
     return SubscriptionPlanRepository(async_session_factory)

@@ -1,6 +1,3 @@
-# Файл: app/schemas/__init__.py (ЗАМЕНИТЬ ВСЁ)
-
-# --- common.py ---
 from .common import (
     BaseModelParams,
     PromptMixin,
@@ -8,7 +5,7 @@ from .common import (
     IsAdminResponse
 )
 
-# --- generation.py ---
+
 from .generation import (
     Sora2Params,
     Veo3QualityParams,
@@ -23,7 +20,7 @@ from .generation import (
     GenerationHistoryResponse
 )
 
-# --- analytics.py ---
+
 from .analytics import (
     Balance,
     UserStatItem,
@@ -31,7 +28,7 @@ from .analytics import (
     UserAnalyticsResponse
 )
 
-# --- auth.py ---
+
 from .auth import (
     TelegramInitRequest,
     TelegramInitResponse,
@@ -75,29 +72,34 @@ from .subscription import (
 )
 
 
-# --- user.py ---
+
 from .user import (
     UserBalanceResponse,
     UserProfileResponse,
     UserProfileUpdateRequest
 )
 
-# --- admin.py ---
+
 from .admin import (
     AdminUserResponse,
     AdminUserListResponse,
     BlockUserRequest,
     BlockUserResponse,
     UpdateSubscriptionRequest,
-    UpdateSubscriptionResponse
+    UpdateSubscriptionResponse,
+    AdminGenerationTaskUser,
+    AdminGenerationTaskResponse,
+    AdminGenerationListResponse,
+    RevenueMetrics,
+    AdminMetricsResponse
 )
 
-# --- transcribe.py ---
+
 from .transcribe import (
     TranscribeResponse
 )
 
-# --- product.py ---
+
 from .product import (
     ProductBase,
     ProductCreate,
@@ -105,14 +107,16 @@ from .product import (
     ProductResponse
 )
 
-# --- billing.py ---
+
 from .billing import (
     CheckoutRequest,
     CheckoutResponse,
     GetCourseWebhook,
     PaymentStatusResponse,
     CanceledSubscriptionResponse,
-    InvoiceResponse
+    InvoiceResponse,
+    BillingSubscriptionDetailResponse,
+    ErrorDetailInsufficientCredits
 )
 
 from .plan_access import (
