@@ -154,31 +154,26 @@ class SubscriptionRepository:
 
             await session.commit()
 
-    async def cancel_subscription(self, user: User) -> Optional[UserSubscription]:
-        """
-        (POST /billing/cancel)
-        1. Находит активную подписку и ОТМЕНЯЕТ ее.
-        2. НАЗНАЧАЕТ юзеру 'free' план (без начисления кредитов).
-        """
+
+    async def cancel_subscription(self, user_id: int) -> Optional[UserSubscription]:
         async with self.session_factory() as session:
-            active_sub = await self.get_active_subscription_with_plan(user.id)
+
+            active_sub = await self.get_active_subscription_with_plan(user_id)
+
             if not active_sub or active_sub.plan.slug == 'free':
                 return None
 
-
             active_sub.status = "cancelled"
-
 
             free_plan = await self.plan_repo.get_by_slug("free")
             if not free_plan:
-                logging.error(f"Cannot cancel subscription for user {user.id}: 'free' plan not found!")
+                logging.error(f"Cannot cancel subscription for user {user_id}: 'free' plan not found!")
                 await session.commit()
                 return active_sub
 
-
             new_free_sub = UserSubscription(
-                id=f"sub_{user.id}_{int(datetime.now().timestamp())}",
-                user_id=user.id,
+                id=f"sub_{user_id}_{int(datetime.now().timestamp())}",
+                user_id=user_id,
                 plan_id=free_plan.id,
                 status='active',
                 is_manual=True,
@@ -188,7 +183,6 @@ class SubscriptionRepository:
             session.add(new_free_sub)
 
             await session.commit()
-
 
             await session.refresh(new_free_sub)
             await session.refresh(new_free_sub, attribute_names=['plan'])

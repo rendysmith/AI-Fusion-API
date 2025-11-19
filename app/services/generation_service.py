@@ -114,7 +114,13 @@ class GenerationService:
         created_at = datetime.now(timezone.utc)
 
         task_message_body = self._prepare_task_message(
-            task_id, processed_params, final_cost, prime_cost, created_at
+            task_id=task_id,
+            model_params=processed_params,
+            final_cost=final_cost,
+            prime_cost=prime_cost,
+            created_at=created_at,
+            plan_is_unlimited=active_plan.has_unlimited,
+            delay_factor=active_plan.unlimited_delay_factor
         )
 
         await self.task_repo.create_pending_task(
@@ -135,7 +141,9 @@ class GenerationService:
             model_params: schemas.AnyModelParams,
             final_cost: float,
             prime_cost: float,
-            created_at: datetime
+            created_at: datetime,
+            plan_is_unlimited: bool = False,
+            delay_factor: float = 1.0
     ) -> dict:
 
         return {
@@ -147,6 +155,8 @@ class GenerationService:
             "params": model_params.model_dump(),
             "cost": final_cost,
             "prime_cost": prime_cost,
+            "plan_is_unlimited": plan_is_unlimited,
+            "unlimited_delay_factor": delay_factor,
             "result": None,
             "error": None,
         }

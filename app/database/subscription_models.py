@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, func
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, func, Float
 from sqlalchemy.orm import relationship
 
 from app.database.base import Base
@@ -16,6 +16,11 @@ class SubscriptionPlan(Base):
     concurrent_generation_limit = Column(Integer, nullable=False, default=1)
     sort_order = Column(Integer, default=0)
     is_active = Column(Boolean, default=True, nullable=False)
+
+    has_unlimited = Column(Boolean, default=False, nullable=False)
+
+    unlimited_delay_factor = Column(Float, default=1.0, nullable=False)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

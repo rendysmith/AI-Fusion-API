@@ -54,8 +54,8 @@ class AiModelResponse(AiModelBase):
     updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
-    @classmethod
     @field_validator('settings', mode='before')
+    @classmethod
     def convert_json_to_string(cls, v):
         if isinstance(v, dict):
             return json.dumps(v)

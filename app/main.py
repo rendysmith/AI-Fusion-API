@@ -47,6 +47,14 @@ import app.database.task_models
 import app.database.billing_models
 
 
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - [WORKER] - %(message)s'
+)
+
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
@@ -86,6 +94,8 @@ async def lifespan(app: FastAPI):
 
 
 AUTH_DEPENDENCY = Depends(get_current_user)
+
+
 
 app = FastAPI(
     title=settings.APP_TITLE,

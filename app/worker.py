@@ -14,7 +14,7 @@ from app.database.repositories.analytics_repository import AnalyticsRepository
 from app.database.repositories.circuit_breaker_repository import CircuitBreakerRepository
 from app.database.repositories.task_repository import TaskRepository
 from app.database.repositories.user_repository import UserRepository
-from app.services.providers import kie_ai_provider, openai_provider
+from app.services.providers import kie_ai_provider, openai_provider, unifically_provider
 from app.services.s3_uploader import S3UploaderService
 from app.settings import settings
 
@@ -30,7 +30,7 @@ MAX_CONCURRENT_TASKS = settings.WORKER_MAX_CONCURRENT_TASKS
 logger = logging.getLogger(__name__)
 
 MODEL_PROCESSORS_PRIMARY = {
-    'sora-2': kie_ai_provider.generate_sora_kie_ai_video,
+    'sora-2': unifically_provider.generate_sora_video,
     'veo-3-quality': kie_ai_provider.generate_veo_kie_ai_video,
     'veo-3-fast': kie_ai_provider.generate_veo_kie_ai_video
 }
@@ -57,6 +57,9 @@ async def process_task(session: aiohttp.ClientSession,
 
     model_name = task_data["model"]
     params = task_data.get("params", {})
+
+    plan_is_unlimited = task_data.get("plan_is_unlimited", False)
+    delay_factor = task_data.get("unlimited_delay_factor", 1.0)
 
     try:
 
@@ -110,6 +113,19 @@ async def process_task(session: aiohttp.ClientSession,
 
         await task_repo.complete_task(task_id, result_data)
         logger.info(f"TaskID: {task_id} | Задача успешно завершена.")
+
+        if plan_is_unlimited and delay_factor > 1.0:
+
+            original_duration = params.get('duration', 10)
+
+            delay_seconds = (original_duration * delay_factor) - original_duration
+
+            final_delay = max(delay_seconds, 180.0)
+
+            logger.info(f"TaskID: {task_id} | Задержка в режиме Unlimited: {final_delay:.0f} сек.")
+
+            await asyncio.sleep(final_delay)
+            logger.info(f"TaskID: {task_id} | Задержка завершена.")
 
 
         try:

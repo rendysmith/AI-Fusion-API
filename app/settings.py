@@ -18,8 +18,11 @@ class Settings(BaseSettings):
 
     GETCOURSE_API_KEY: str
     GETCOURSE_ACCOUNT_NAME: str
+    GETCOURSE_WEBHOOK_SECRET: str = "my-super-secret-key-123"
 
-    ADMIN_EMAIL_GET_COURSE: str
+    API_UNIFICALLY_TOKEN: str
+
+    GETCOURSE_ADMIN_EMAIL: str
 
     FRONTEND_DOMAIN: str
 
