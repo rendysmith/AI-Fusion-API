@@ -5,7 +5,6 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
 from firebase_admin import auth
 
-
 from app import schemas
 from app.database.repositories.plan_repository import SubscriptionPlanRepository
 from app.database.repositories.subscription_repository import SubscriptionRepository

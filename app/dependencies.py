@@ -32,7 +32,7 @@ from app.database.repositories.product_repository import ProductRepository
 from app.database.repositories.telegram_token_repository import TelegramTokenRepository
 from app.database.repositories.qr_session_repository import QrSessionRepository
 from app.database.repositories.circuit_breaker_repository import CircuitBreakerRepository
-
+from app.database.repositories.metric_repository import VisitorRepository
 
 from app.services.billing_service import BillingService
 from app.services.getcourse_service import GetCourseService
@@ -277,3 +277,6 @@ async def get_current_admin_user(
             detail="Access forbidden: requires admin privileges."
         )
     return user
+
+def get_visitor_repository() -> VisitorRepository:
+    return VisitorRepository(async_session_factory)
