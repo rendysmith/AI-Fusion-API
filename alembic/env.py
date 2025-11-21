@@ -14,6 +14,7 @@ import app.database.billing_models
 import app.database.subscription_models
 import app.database.ai_model
 import app.database.video_template_models
+import app.database.metric_models
 
 
 # this is the Alembic Config object, which provides
