@@ -13,7 +13,7 @@ from app.database.repositories.plan_repository import SubscriptionPlanRepository
 from app.database.repositories.subscription_repository import SubscriptionRepository
 from app.database.repositories.user_repository import UserRepository
 from app.dependencies import get_user_repository, get_qr_session_repository, check_bot_secret_key, \
-    get_subscription_repository, get_subscription_plan_repository
+    get_subscription_repository, get_subscription_plan_repository, get_visitor_repository
 
 from app.database.repositories.qr_session_repository import QrSessionRepository
 from app.services.firebase_service import create_custom_token

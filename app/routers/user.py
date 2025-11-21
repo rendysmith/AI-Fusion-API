@@ -16,7 +16,8 @@ from app.database.repositories.plan_repository import SubscriptionPlanRepository
 from app.database.repositories.subscription_repository import SubscriptionRepository
 from app.database.repositories.user_repository import UserRepository
 from app.dependencies import get_current_user, get_task_repository, get_user_repository, \
-    get_subscription_plan_repository, get_subscription_repository, get_plan_access_repository, get_http_session
+    get_subscription_plan_repository, get_subscription_repository, get_plan_access_repository, get_http_session, \
+    get_visitor_repository
 from app.database.repositories.task_repository import TaskRepository
 from app.services.firebase_service import verify_firebase_token
 
