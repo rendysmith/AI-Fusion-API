@@ -1,11 +1,14 @@
 import asyncio
 import logging
 import uuid
+from typing import Optional
+
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
 from firebase_admin import auth
 
 from app import schemas
+from app.database.repositories.metric_repository import VisitorRepository
 from app.database.repositories.plan_repository import SubscriptionPlanRepository
 from app.database.repositories.subscription_repository import SubscriptionRepository
 from app.database.repositories.user_repository import UserRepository
@@ -57,6 +60,7 @@ async def get_qr_session_status(
 class LinkTelegram(BaseModel):
     session_id: str
     telegram_id: int
+    visitor_id: Optional[uuid.UUID] = None
 
 
 @router.post("/qr/link", dependencies=[Depends(check_bot_secret_key)])
@@ -65,7 +69,8 @@ async def link_telegram_account(
         user_repo: UserRepository = Depends(get_user_repository),
         qr_repo: QrSessionRepository = Depends(get_qr_session_repository),
         plan_repo: SubscriptionPlanRepository = Depends(get_subscription_plan_repository),
-        sub_repo: SubscriptionRepository = Depends(get_subscription_repository)
+        sub_repo: SubscriptionRepository = Depends(get_subscription_repository),
+        visitor_repo: VisitorRepository = Depends(get_visitor_repository)
 ):
     session = await qr_repo.get_session_status(data.session_id)
     if not session or session["status"] != "pending":
@@ -73,6 +78,12 @@ async def link_telegram_account(
 
     user = await user_repo.get_by_telegram_id(data.telegram_id)
     firebase_uid = None
+
+    if data.visitor_id:
+        try:
+            await visitor_repo.link_user(data.visitor_id, user.id)
+        except Exception as e:
+            logging.error(f"Analytics Link Error: {e}")
 
     if user:
 

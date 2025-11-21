@@ -14,8 +14,10 @@ class User(Base):
     display_name = Column(String(100), nullable=True)
     photo_url = Column(String(255), nullable=True)
     telegram_id = Column(BigInteger, unique=True, index=True, nullable=True)
-    coefficient = Column(Float, default=1.0, nullable=False)
 
+    registration_method = Column(String(20), nullable=False, default='unknown')
+
+    coefficient = Column(Float, default=1.0, nullable=False)
     balance = Column(DECIMAL(precision=15, scale=6), default=0.0, nullable=False)
 
     is_admin = Column(Boolean, default=False, nullable=False)

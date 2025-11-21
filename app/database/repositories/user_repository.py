@@ -73,14 +73,17 @@ class UserRepository(BaseRepository):
             await session.commit()
 
     async def deduct_balance(self, user_id: int, amount: float) -> Optional[Decimal]:
+
+        amount_decimal = Decimal(str(amount))
+
         async with self.session_factory() as session:
             stmt = (
                 update(User)
                 .where(
                     User.id == user_id,
-                    User.balance >= amount
+                    User.balance >= amount_decimal
                 )
-                .values(balance=User.balance - amount)
+                .values(balance=User.balance - amount_decimal)
                 .returning(User.balance)
             )
 

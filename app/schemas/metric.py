@@ -4,4 +4,4 @@ from typing import Optional
 
 class VisitorTrackRequest(BaseModel):
     visitor_id: UUID
-    referrer: Optional[str] = None # Откуда пришел (например, google.com)
+    referrer: Optional[str] = None

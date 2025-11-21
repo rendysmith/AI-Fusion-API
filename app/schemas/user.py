@@ -2,6 +2,8 @@ import re
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import Optional
 
+from uuid import UUID
+
 from .subscription import SubscriptionDetailResponse
 from .plan import SubscriptionPlanResponse
 
@@ -18,6 +20,7 @@ class UserProfileResponse(BaseModel):
 
     email: Optional[str] = None
     username: Optional[str] = None
+
     display_name: Optional[str] = None
     photo_url: Optional[str] = None
     balance: float
@@ -36,6 +39,7 @@ class UserProfileResponse(BaseModel):
 
 class UserProfileUpdateRequest(BaseModel):
     username: Optional[str] = Field(None, min_length=3, max_length=30)
+    visitor_id: Optional[UUID] = None
     display_name: Optional[str] = Field(None, max_length=100)
     photo_url: Optional[str] = Field(None, max_length=255)
     @classmethod

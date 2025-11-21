@@ -124,3 +124,5 @@ from .plan_access import (
     PlanModelAccessBase,
     PlanModelAccessResponse
 )
+
+from .metric import VisitorTrackRequest

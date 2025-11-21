@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Request, status
 
-from app.schemas.metric import VisitorTrackRequest
+from app.schemas import VisitorTrackRequest
 from app.database.repositories.metric_repository import VisitorRepository
 from app.dependencies import get_visitor_repository
 
@@ -12,7 +12,7 @@ async def track_visit(
         request: Request,
         visitor_repo: VisitorRepository = Depends(get_visitor_repository)
 ):
-    # Получаем User-Agent
+
     user_agent = request.headers.get("user-agent")
 
     await visitor_repo.track_visit(

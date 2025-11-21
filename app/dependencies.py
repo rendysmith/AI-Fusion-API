@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
+from typing import Any, AsyncGenerator
 
 import aiohttp
 import redis.asyncio as aioredis
@@ -83,7 +84,7 @@ def get_analytics_repository() -> AnalyticsRepository:
     return AnalyticsRepository(async_session_factory)
 
 
-async def get_async_session() -> AsyncSession:
+async def get_async_session() -> AsyncGenerator[Any, Any]:
 
     async with async_session_factory() as session:
         yield session
@@ -104,6 +105,8 @@ def get_subscription_repository(
 def get_telegram_token_repository() -> TelegramTokenRepository:
     return TelegramTokenRepository(async_session_factory)
 
+def get_visitor_repository() -> VisitorRepository:
+    return VisitorRepository(async_session_factory)
 
 def get_qr_session_repository(
         redis_client: aioredis.Redis = Depends(get_redis_client)

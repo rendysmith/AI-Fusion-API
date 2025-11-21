@@ -10,6 +10,7 @@ from starlette import status
 
 from app import schemas
 from app.database.main_models import User
+from app.database.repositories.metric_repository import VisitorRepository
 from app.database.repositories.plan_access_repository import PlanAccessRepository
 from app.database.repositories.plan_repository import SubscriptionPlanRepository
 from app.database.repositories.subscription_repository import SubscriptionRepository
@@ -94,6 +95,7 @@ async def create_or_update_user_profile(
         user_repo: UserRepository = Depends(get_user_repository),
         plan_repo: SubscriptionPlanRepository = Depends(get_subscription_plan_repository),
         sub_repo: SubscriptionRepository = Depends(get_subscription_repository),
+        visitor_repo: VisitorRepository = Depends(get_visitor_repository),
         authorization: str = Header(...)
 ):
     try:
@@ -124,6 +126,14 @@ async def create_or_update_user_profile(
             email=email,
             payload=payload
         )
+
+        if payload.visitor_id:
+            try:
+                await visitor_repo.link_user(payload.visitor_id, user.id)
+            except Exception as e:
+                logging.error(f"Analytics Link Error: {e}")
+
+
     except Exception as e:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"DB error: {e}")
 
