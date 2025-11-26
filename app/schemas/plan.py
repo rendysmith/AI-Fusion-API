@@ -26,13 +26,15 @@ class SubscriptionPlanBase(BaseModel):
     concurrent_generation_limit: int = Field(..., ge=1)
     sort_order: int = 0
     is_active: bool
+    has_unlimited: bool = False
 
 
 class SubscriptionPlanCreate(SubscriptionPlanBase):
     is_active: bool | int
+    has_unlimited: bool | int
 
     @classmethod
-    @field_validator('is_active', mode='before')
+    @field_validator('is_active','has_unlimited', mode='before')
     def convert_int_to_bool(cls, v):
         return bool(v)
 
@@ -46,9 +48,10 @@ class SubscriptionPlanUpdate(BaseModel):
     concurrent_generation_limit: Optional[int] = Field(None, ge=1)
     sort_order: Optional[int] = None
     is_active: Optional[bool | int] = None
+    has_unlimited: Optional[bool | int] = None
 
     @classmethod
-    @field_validator('is_active', mode='before')
+    @field_validator('is_active', 'has_unlimited', mode='before')
     def convert_int_to_bool_opt(cls, v):
         if v is not None:
             return bool(v)

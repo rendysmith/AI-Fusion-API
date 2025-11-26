@@ -36,6 +36,7 @@ from app.routers import plan_access as plan_access_router
 from app.routers import admin_users as admin_users_router
 from app.routers import admin_tasks as admin_tasks_router
 from app.routers import admin_analytics as admin_analytics_router
+from app.routers import metric as metrics_router
 from app.routers import transcribe as transcribe_router
 from app.routers import billing as billing_router
 from app.routers import webhooks as webhooks_router
@@ -125,6 +126,7 @@ app.include_router(webhooks_router.router)
 app.include_router(products_router.router)
 app.include_router(products_router.admin_router)
 app.include_router(telegram_router.router)
+app.include_router(metrics_router.router)
 
 app.add_middleware(
     CORSMiddleware,

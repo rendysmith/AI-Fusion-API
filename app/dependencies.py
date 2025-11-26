@@ -10,7 +10,6 @@ from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from sqlalchemy import update, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
 from app.database.main_models import User
@@ -19,7 +18,6 @@ from app.database.subscription_models import UserSubscription, SubscriptionPlan
 from app.services.firebase_service import verify_firebase_token
 from app.settings import settings
 
-#
 from app.database.repositories.user_repository import UserRepository
 from app.database.repositories.task_repository import TaskRepository
 from app.database.repositories.analytics_repository import AnalyticsRepository

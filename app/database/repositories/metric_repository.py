@@ -44,11 +44,11 @@ class VisitorRepository:
             await session.execute(stmt)
             await session.commit()
 
-    async def get_traffic_stats(self, target_date: date):
-
+    async def get_traffic_stats(self, start_date: date, end_date: date):
         async with self.session_factory() as session:
-            start_dt = datetime.combine(target_date, time.min)
-            end_dt = datetime.combine(target_date, time.max)
+
+            start_dt = datetime.combine(start_date, time.min)
+            end_dt = datetime.combine(end_date, time.max)
 
             stmt = select(
 
@@ -58,10 +58,7 @@ class VisitorRepository:
 
 
                 func.count(Visitor.visitor_id).filter(
-                    and_(
-                        Visitor.last_visit_at.between(start_dt, end_dt),
-                        Visitor.first_visit_at.between(start_dt, end_dt)
-                    )
+                    Visitor.first_visit_at.between(start_dt, end_dt)
                 ).label("new_visits"),
 
 
@@ -77,7 +74,6 @@ class VisitorRepository:
             row = result.one()
 
             return {
-                "date": target_date,
                 "total_visitors": row.total_visits or 0,
                 "new_visitors": row.new_visits or 0,
                 "returning_visitors": row.returning_visits or 0

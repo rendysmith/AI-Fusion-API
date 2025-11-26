@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import uuid
 from typing import Optional
@@ -22,6 +23,9 @@ from app.settings import settings
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
+class QrSessionCreate(BaseModel):
+    visitor_id: Optional[uuid.UUID] = None
+
 
 class QrSession(BaseModel):
     session_id: str
@@ -34,10 +38,22 @@ class QrStatus(BaseModel):
 
 @router.post("/qr/session", response_model=QrSession)
 async def create_qr_session(
+        payload: QrSessionCreate = None,
         qr_repo: QrSessionRepository = Depends(get_qr_session_repository)
 ):
     session_id = str(uuid.uuid4())
-    await qr_repo.create_session(session_id)
+
+
+    session_data = {
+        "status": "pending",
+        "token": None
+    }
+    if payload and payload.visitor_id:
+        session_data["visitor_id"] = str(payload.visitor_id)
+
+    key = qr_repo._get_key(session_id)
+    await qr_repo.redis.setex(key, qr_repo.SESSION_TTL, json.dumps(session_data))
+
     return QrSession(session_id=session_id)
 
 
@@ -60,7 +76,6 @@ async def get_qr_session_status(
 class LinkTelegram(BaseModel):
     session_id: str
     telegram_id: int
-    visitor_id: Optional[uuid.UUID] = None
 
 
 @router.post("/qr/link", dependencies=[Depends(check_bot_secret_key)])
@@ -76,19 +91,17 @@ async def link_telegram_account(
     if not session or session["status"] != "pending":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or expired session")
 
+    visitor_id_str = session.get("visitor_id")
+
     user = await user_repo.get_by_telegram_id(data.telegram_id)
     firebase_uid = None
-
-    if data.visitor_id:
-        try:
-            await visitor_repo.link_user(data.visitor_id, user.id)
-        except Exception as e:
-            logging.error(f"Analytics Link Error: {e}")
+    final_user = None
 
     if user:
 
         logging.info(f"QR Link: Найден существующий юзер (ID: {user.id}) по TG ID: {data.telegram_id}")
         firebase_uid = user.firebase_uid
+        final_user = user
 
     else:
 
@@ -129,6 +142,8 @@ async def link_telegram_account(
             else:
                 logging.warning(f"QR Link: 'free' plan not found. User created without credits.")
 
+            final_user = new_user
+
         except Exception as e:
             logging.error(f"QR Link: Не удалось создать профиль в Postgres: {e}")
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "DB profile creation failed")
@@ -136,11 +151,20 @@ async def link_telegram_account(
     if not firebase_uid:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to get Firebase UID")
 
+    if visitor_id_str and final_user:
+        try:
+
+            from uuid import UUID
+            v_uuid = UUID(visitor_id_str)
+            await visitor_repo.link_user(v_uuid, final_user.id)
+            logging.info(f"Analytics: Linked visitor {v_uuid} to user {final_user.id}")
+        except Exception as e:
+            logging.error(f"Analytics: Link failed: {e}")
+
     custom_token = await asyncio.to_thread(create_custom_token, firebase_uid)
 
 
-    await qr_repo.complete_session(data.session_id, "completed_by_bot")
-
+    await qr_repo.complete_session(data.session_id, custom_token)
 
     return {
         "status": "success",

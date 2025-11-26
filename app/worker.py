@@ -97,7 +97,14 @@ async def process_task(session: aiohttp.ClientSession,
                 )
             except Exception as error:
 
-                logger.warning(f"TaskID: {task_id} | Primary (Kie AI) упал. Пробую Fallback (OpenAI)...")
+                error_str = str(error)
+
+
+                if "400" in error_str:
+                    logger.error(f"TaskID: {task_id} | Ошибка 400 (Bad Request). Fallback ОТМЕНЕН. Ошибка: {error}")
+                    raise error
+
+                logger.warning(f"TaskID: {task_id} | Primary упал ({error}). Пробую Fallback (OpenAI)...")
 
 
                 fallback_processor = MODEL_PROCESSORS_FALLBACK.get(model_name)
