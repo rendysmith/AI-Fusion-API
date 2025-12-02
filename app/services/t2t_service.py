@@ -3,13 +3,11 @@ import mimetypes
 
 from litellm import completion
 
-import aiohttp
-import aiobotocore.client
 
 
+from app.database.engine import async_session_factory
 from app.settings import settings
 from app.database.repositories.ai_model_repository import AiModelRepository
-from app.database.db import async_session_factory
 
 
 logger = logging.getLogger(__name__)
@@ -38,13 +36,12 @@ class UniversalLLM:
         api_key = API_KEYS[provider]
 
         amr = AiModelRepository(async_session_factory)
-        model = await amr.get_by_name(provider)
-        model_slug = model.slug if model else "default_model_slug"
+        model = amr.get_by_name(provider).slug
 
         try:
             # LiteLLM сам понимает, какое API дергать, исходя из названия модели
             response = completion(
-                model=model_slug,
+                model=model,
                 messages=messages,
                 api_key=api_key,
                 **kwargs
