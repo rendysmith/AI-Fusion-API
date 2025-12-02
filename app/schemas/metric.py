@@ -6,7 +6,6 @@ class VisitorTrackRequest(BaseModel):
     visitor_id: UUID
     referrer: Optional[str] = None
 
-
 class AnalyticsVisitors(BaseModel):
     total: int
     new: int

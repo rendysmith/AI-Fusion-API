@@ -58,4 +58,9 @@ class Settings(BaseSettings):
 
     FIREBASE_PHANTOM_EMAIL_DOMAIN: str
 
+    OPENAI_API_KEY: str
+    ANTHROPIC_API_KEY: str
+    GEMINI_API_KEY: str
+    PERPLEXITY_API_KEY: str
+
 settings = Settings()

@@ -60,3 +60,7 @@ class AiModelResponse(AiModelBase):
         if isinstance(v, dict):
             return json.dumps(v)
         return v
+
+class ModelT2T(BaseModel):
+    prompt: str
+    provider: str

@@ -22,6 +22,12 @@ class AiModelRepository:
             result = await session.execute(stmt)
             return result.scalars().first()
 
+    async def get_by_name(self, name: str) -> Optional[AiModel]:
+        async with self.session_factory() as session:
+            stmt = select(AiModel).where(AiModel.name == name)
+            result = await session.execute(stmt)
+            return result.scalars().first()
+
     async def get_all_by_category(self, category: Optional[str] = None) -> List[AiModel]:
         async with self.session_factory() as session:
             stmt = select(AiModel).order_by(asc(AiModel.sort_order))  # (snake_case)
