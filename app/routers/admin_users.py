@@ -126,3 +126,34 @@ async def update_user_subscription(
         subscription=subscription_dto,
         success=True
     )
+
+
+@admin_router.post(
+    "/bulk-credits",
+    summary="[Admin] Mass add credits by Email OR Telegram ID"
+)
+async def add_bulk_credits(
+        payload: schemas.BulkCreditRequest,
+        user_repo: UserRepository = Depends(get_user_repository)
+):
+    success_count = 0
+    failed_identifiers = []
+
+    for item in payload.identifiers:
+        clean_item = item.strip()
+        if not clean_item:
+            continue
+
+        result = await user_repo.add_credits_smart(clean_item, payload.amount)
+
+        if result:
+            success_count += 1
+        else:
+            failed_identifiers.append(clean_item)
+
+    return {
+        "success": True,
+        "processed": success_count,
+        "failed_count": len(failed_identifiers),
+        "failed_identifiers": failed_identifiers
+    }

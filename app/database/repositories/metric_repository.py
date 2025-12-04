@@ -14,20 +14,46 @@ class VisitorRepository:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self.session_factory = session_factory
 
-    async def track_visit(self, visitor_id: UUID, referrer: Optional[str] = None, user_agent: Optional[str] = None):
+    async def track_visit(self,
+                          visitor_id: UUID,
+                          referrer: Optional[str] = None,
+                          user_agent: Optional[str] = None,
+                          utms: dict = None):
+        if utms is None:
+            utms = {}
 
         async with self.session_factory() as session:
-            stmt = insert(Visitor).values(
-                visitor_id=visitor_id,
-                referrer=referrer,
-                user_agent=user_agent,
-                last_visit_at=datetime.now(),
 
-            )
+
+            values = {
+                "visitor_id": visitor_id,
+                "referrer": referrer,
+                "user_agent": user_agent,
+                "last_visit_at": datetime.now(),
+                "utm_source": utms.get("utm_source"),
+                "utm_medium": utms.get("utm_medium"),
+                "utm_campaign": utms.get("utm_campaign"),
+                "utm_content": utms.get("utm_content"),
+                "utm_term": utms.get("utm_term"),
+            }
+
+            stmt = insert(Visitor).values(**values)
+
+
+            update_dict = {"last_visit_at": datetime.now()}
+
+
+            if utms.get("utm_source"):
+                update_dict.update({
+                    "utm_source": values["utm_source"],
+                    "utm_medium": values["utm_medium"],
+                    "utm_content": values["utm_content"],
+                    "utm_term": values["utm_term"],
+                })
 
             stmt = stmt.on_conflict_do_update(
                 index_elements=[Visitor.visitor_id],
-                set_={"last_visit_at": datetime.now()}
+                set_=update_dict
             )
 
             await session.execute(stmt)

@@ -12,12 +12,21 @@ async def track_visit(
         request: Request,
         visitor_repo: VisitorRepository = Depends(get_visitor_repository)
 ):
-
     user_agent = request.headers.get("user-agent")
+
+
+    utms = {
+        "utm_source": payload.utm_source,
+        "utm_medium": payload.utm_medium,
+        "utm_campaign": payload.utm_campaign,
+        "utm_content": payload.utm_content,
+        "utm_term": payload.utm_term,
+    }
 
     await visitor_repo.track_visit(
         visitor_id=payload.visitor_id,
         referrer=payload.referrer,
-        user_agent=user_agent
+        user_agent=user_agent,
+        utms=utms
     )
     return {"status": "tracked"}

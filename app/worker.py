@@ -17,6 +17,7 @@ from app.database.repositories.user_repository import UserRepository
 from app.services.providers import kie_ai_provider, openai_provider, unifically_provider
 from app.services.s3_uploader import S3UploaderService
 from app.settings import settings
+from app.utils.error_mapper import get_user_friendly_error
 
 logging.basicConfig(
     level=logging.INFO,
@@ -151,8 +152,13 @@ async def process_task(session: aiohttp.ClientSession,
             logger.error(f"TaskID: {task_id} | ОШИБКА ЗАПИСИ В АНАЛИТИКУ: {analytics_e}", exc_info=True)
 
     except Exception as e:
-        logger.error(f"TaskID: {task_id} | Ошибка при обработке: {e}", exc_info=True)
-        await task_repo.fail_task(task_id, str(e))
+        logger.error(f"TaskID: {task_id} | CRITICAL ERROR: {e}", exc_info=True)
+
+
+        friendly_error = get_user_friendly_error(e)
+
+        await task_repo.fail_task(task_id, friendly_error)
+
         await refund_on_failure(task_data, user_repo)
 
 

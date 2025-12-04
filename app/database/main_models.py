@@ -23,13 +23,6 @@ class User(Base):
     is_admin = Column(Boolean, default=False, nullable=False)
     is_blocked = Column(Boolean, default=False, nullable=False)
 
-    subscription = relationship(
-        "UserSubscription",
-        primaryjoin="and_(User.id == UserSubscription.user_id, UserSubscription.status == 'active')",
-        uselist=False,
-        lazy="joined" 
-    )
-
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -41,6 +34,21 @@ class User(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False
+    )
+
+    visitor_info = relationship(
+        "Visitor",
+        primaryjoin="foreign(Visitor.user_id) == User.id",
+        uselist=False,
+        viewonly=True
+    )
+
+
+    subscription = relationship(
+        "UserSubscription",
+        primaryjoin="and_(User.id == UserSubscription.user_id, UserSubscription.status == 'active')",
+        uselist=False,
+        lazy="joined"
     )
 
 

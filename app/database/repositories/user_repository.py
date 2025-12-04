@@ -213,3 +213,29 @@ class UserRepository(BaseRepository):
             )
             await session.execute(stmt)
             await session.commit()
+
+    async def add_credits_smart(self, identifier: str, amount: int) -> bool:
+        """
+        Ищет юзера по Telegram ID или Email и начисляет кредиты.
+        """
+        async with self.session_factory() as session:
+            stmt = select(User)
+
+
+            if identifier.isdigit():
+
+                tg_id = int(identifier)
+                stmt = stmt.where(User.telegram_id == tg_id)
+            else:
+
+                stmt = stmt.where(User.email == identifier)
+
+            user = (await session.execute(stmt)).scalars().first()
+
+            if not user:
+                return False
+
+            user.balance += Decimal(amount)
+
+            await session.commit()
+            return True

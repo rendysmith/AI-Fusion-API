@@ -28,6 +28,7 @@ API_UNIFICALLY_TOKEN = settings.API_UNIFICALLY_TOKEN
 
 
 class SoraError(Exception):
+    """Кастомная ошибка для генерации видео через Sora-2."""
     pass
 
 
@@ -60,6 +61,24 @@ async def _start_sora_task(session: aiohttp.ClientSession,
         try:
             logging.info(f"Попытка {attempt + 1}/{SORA_POST_MAX_RETRIES} запроса генерации SORA: {SORA_GENERATE_URL}")
             async with session.post(SORA_GENERATE_URL, headers=headers, json=payload, ssl=False) as resp:
+
+
+                if resp.status == 400:
+                    try:
+                        error_data = await resp.json()
+
+                        logging.error(error_data)
+
+                        error_message = error_data.get('data', {}).get('error', {}).get(
+                            'message', 'API вернул 400 без сообщения об ошибке'
+                        )
+                    except Exception:
+                        error_message = await resp.text()
+
+                    logging.error(f"SORA: Ошибка старта задачи (400): {error_message}")
+
+                    raise SoraError(f"Ошибка API (400): {error_message}")
+
                 resp.raise_for_status()
                 response_data = await resp.json()
 
@@ -71,7 +90,7 @@ async def _start_sora_task(session: aiohttp.ClientSession,
                 return api_task_id
 
         except aiohttp.ClientResponseError as e:
-
+            # Ретраи только для серверных ошибок (5xx)
             if e.status in [500, 502, 503, 504, 524] and attempt < SORA_POST_MAX_RETRIES - 1:
                 logging.warning(
                     f"SORA: Ошибка сервера ({e.status}) при запросе task_id. Попытка {attempt + 1}/{SORA_POST_MAX_RETRIES}. "
@@ -80,6 +99,10 @@ async def _start_sora_task(session: aiohttp.ClientSession,
                 await asyncio.sleep(SORA_POST_RETRY_DELAY)
                 continue
 
+            # Остальные ошибки пробрасываем (чтобы Circuit Breaker мог их увидеть)
+            raise
+        except SoraError:
+            # Наши кастомные ошибки (в т.ч. 400) пробрасываем сразу
             raise
         except Exception as e:
             logging.error(f"SORA: Неожиданная ошибка при запросе task_id: {e}", exc_info=True)
@@ -143,7 +166,6 @@ async def _poll_sora_result(session: aiohttp.ClientSession, api_task_id: str) ->
                 await asyncio.sleep(SORA_POLLING_INTERVAL)
 
         except aiohttp.ClientResponseError:
-
             raise
         except SoraError:
             raise
@@ -177,7 +199,6 @@ async def generate_sora_video(session: aiohttp.ClientSession,
         image_url = params.get('image_url')
         seed = params.get('seed')
 
-
         api_task_id = await _start_sora_task(
             session=session,
             prompt=prompt,
@@ -189,9 +210,7 @@ async def generate_sora_video(session: aiohttp.ClientSession,
 
         logging.info(f"InternalTaskID: {task_id} | SORA API TaskID: {api_task_id} | Начинаем опрос результата.")
 
-
         temp_video_url = await _poll_sora_result(session, api_task_id)
-
 
         permanent_url = await s3_uploader.download_and_upload_video(
             session=session,
@@ -203,6 +222,7 @@ async def generate_sora_video(session: aiohttp.ClientSession,
 
     except Exception as e:
 
+        # Если ошибка S3 - не рвем цепь, не фоллбечим (видео-то сгенерировалось)
         if isinstance(e, S3UploadServiceError):
             logging.error(f"TaskID: {task_id} | Ошибка S3, но Unifically жив. Fallback не нужен.")
             raise
@@ -210,13 +230,14 @@ async def generate_sora_video(session: aiohttp.ClientSession,
         should_trip = False
         status_code = None
 
-
         if isinstance(e, aiohttp.ClientResponseError):
             status_code = e.status
         elif isinstance(e.__cause__, aiohttp.ClientResponseError):
             status_code = e.__cause__.status
 
-
+        # Условия разрыва цепи:
+        # Серверные (5xx), Бан (429).
+        # ВАЖНО: 400 здесь НЕ вызовет should_trip=True, так как мы его отловили выше и выбросили как SoraError
         if status_code and status_code in [500, 502, 503, 504, 429]:
             should_trip = True
 
@@ -228,10 +249,9 @@ async def generate_sora_video(session: aiohttp.ClientSession,
                 f"TaskID: {task_id} | Unifically считается 'упавшим' (Status: {status_code}). "
                 f"Разрываем цепь '{model_name}' и включаем Fallback на 5 минут."
             )
-
             await circuit_breaker.trip(model_name)
         else:
-            logging.error(f"TaskID: {task_id} | Ошибка Unifically: {e}. Fallback только для текущей задачи.")
-
+            logging.error(
+                f"TaskID: {task_id} | Ошибка Unifically: {e}. Fallback только для текущей задачи (если это не 400).")
 
         raise

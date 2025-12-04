@@ -1,10 +1,12 @@
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.database.analytics_models import DailySystemStats, UserModelStats, CompletedTaskLog
+from app.database.main_models import User
+from app.database.metric_models import Visitor
 
 
 class AnalyticsRepository:
@@ -226,3 +228,58 @@ class AnalyticsRepository:
 
             result = await session.execute(stmt)
             return result.all()
+
+    async def get_users_with_sources(
+            self,
+            page: int,
+            limit: int,
+            date_from: Optional[date] = None,
+            date_to: Optional[date] = None,
+            utm_source: Optional[str] = None,
+            employee_tag: Optional[str] = None
+    ) -> Tuple[List[Any], int]:
+
+        offset = (page - 1) * limit
+
+        async with self.session_factory() as session:
+
+            query = select(
+                User.id.label("user_id"),
+                User.email,
+                User.username,
+                User.created_at,
+                Visitor.utm_source,
+                Visitor.utm_medium,
+                Visitor.utm_campaign,
+                Visitor.utm_term,
+                Visitor.referrer
+            ).join(
+                Visitor, Visitor.user_id == User.id, isouter=True
+            ).order_by(User.created_at.desc())
+
+
+            if date_from and date_to:
+                start_dt = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
+                end_dt = datetime.combine(date_to, datetime.max.time(), tzinfo=timezone.utc)
+                query = query.where(User.created_at.between(start_dt, end_dt))
+
+
+            if utm_source:
+                query = query.where(Visitor.utm_source == utm_source)
+
+
+            if employee_tag:
+
+                query = query.where(Visitor.utm_term.ilike(f"%{employee_tag}%"))
+
+
+            count_stmt = select(func.count()).select_from(query.subquery())
+            total = await session.scalar(count_stmt) or 0
+
+
+            query = query.limit(limit).offset(offset)
+
+            result = await session.execute(query)
+            rows = result.all()
+
+            return rows, total

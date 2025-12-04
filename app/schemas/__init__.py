@@ -91,7 +91,8 @@ from .admin import (
     AdminGenerationTaskResponse,
     AdminGenerationListResponse,
     RevenueMetrics,
-    AdminMetricsResponse
+    AdminMetricsResponse,
+    BulkCreditRequest
 )
 
 
@@ -129,4 +130,9 @@ from .metric import (
     VisitorTrackRequest,
     AnalyticsVisitors,
     AnalyticsDailyResponse
+)
+
+from .admin_user_traffic import (
+    UserTrafficSourceResponse,
+    UserTrafficListResponse
 )

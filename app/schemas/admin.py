@@ -89,3 +89,8 @@ class AdminMetricsResponse(BaseModel):
     revenue: RevenueMetrics
     model_usage: Dict[str, int]
     plan_distribution: Dict[str, int]
+
+
+class BulkCreditRequest(BaseModel):
+    identifiers: List[str]
+    amount: int

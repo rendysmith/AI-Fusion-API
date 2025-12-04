@@ -16,3 +16,9 @@ class Visitor(Base):
 
     referrer = Column(String, nullable=True)
     user_agent = Column(String, nullable=True)
+
+    utm_source = Column(String(100), nullable=True)
+    utm_medium = Column(String(100), nullable=True)
+    utm_campaign = Column(String(100), nullable=True)
+    utm_content = Column(String(100), nullable=True)
+    utm_term = Column(String(100), nullable=True)
