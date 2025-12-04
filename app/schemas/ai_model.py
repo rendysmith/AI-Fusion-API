@@ -1,7 +1,8 @@
 import json
 from datetime import datetime
 from typing import Literal, Optional, Any, Dict
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, ConfigDict, computed_field
+
 
 class AiModelBase(BaseModel):
     name: str = Field(..., min_length=1)
@@ -47,19 +48,56 @@ class AiModelUpdate(BaseModel):
             return bool(v)
         return v
 
+class ModelPricing(BaseModel):
+    cost: float
+    unit: Literal["second", "generation", "image"]
+    display_text: str
+
+
 class AiModelResponse(AiModelBase):
     id: int
-    settings: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    model_config = ConfigDict(from_attributes=True)
 
-    @field_validator('settings', mode='before')
-    @classmethod
-    def convert_json_to_string(cls, v):
-        if isinstance(v, dict):
-            return json.dumps(v)
-        return v
+
+    @computed_field
+    def pricing(self) -> ModelPricing:
+
+        settings_data = {}
+        if isinstance(self.settings, str):
+            try:
+                settings_data = json.loads(self.settings)
+            except:
+                pass
+        elif isinstance(self.settings, dict):
+            settings_data = self.settings
+
+
+        base_cost = float(settings_data.get("cost", 0))
+
+
+
+        unit = "generation"
+        suffix = "за генерацию"
+
+        DURATION_MODELS = ["sora-2", "veo-3-quality", "veo-3-fast", "video-model"]
+
+        if self.slug in DURATION_MODELS or self.category == "video":
+            unit = "second"
+            suffix = "за сек."
+
+
+        elif self.category == "image":
+            unit = "image"
+            suffix = "за фото"
+
+        return ModelPricing(
+            cost=base_cost,
+            unit=unit,
+            display_text=f"{base_cost} 💎 {suffix}"
+        )
+
+    model_config = ConfigDict(from_attributes=True)
 
 class ModelT2T(BaseModel):
     prompt: str

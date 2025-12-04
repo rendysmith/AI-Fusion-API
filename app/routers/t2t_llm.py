@@ -1,7 +1,7 @@
 from fastapi import APIRouter, status
 
 from app.services.t2t_service import UniversalLLM
-from app.schemas.ai_model import ModelT2T
+from app.schemas import ModelT2T
 
 router = APIRouter(prefix="/ai-models", tags=["AI Models"])
 

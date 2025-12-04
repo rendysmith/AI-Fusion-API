@@ -41,7 +41,8 @@ from .ai_model import (
     AiModelBase,
     AiModelCreate,
     AiModelUpdate,
-    AiModelResponse
+    AiModelResponse,
+    ModelT2T,
 )
 
 
