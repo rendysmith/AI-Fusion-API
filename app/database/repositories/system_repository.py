@@ -24,5 +24,10 @@ class SystemRepository:
             return False, ""
 
         message = await self.redis.get(self.MAINTENANCE_MESSAGE_KEY)
-        msg_str = message.decode("utf-8") if message else "Ведутся технические работы. Пожалуйста, попробуйте позже."
+
+        if message:
+            msg_str = message.decode("utf-8") if isinstance(message, bytes) else message
+        else:
+            msg_str = "Ведутся технические работы. Пожалуйста, попробуйте позже."
+
         return True, msg_str
