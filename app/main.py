@@ -15,6 +15,7 @@ from app.database.base import Base
 from app.database.main_models import User
 from app.database.repositories.ai_model_repository import AiModelRepository
 from app.database.repositories.plan_access_repository import PlanAccessRepository
+from app.database.repositories.system_repository import SystemRepository
 from app.database.repositories.task_repository import TaskRepository
 from app.database.engine import engine
 from app import schemas
@@ -42,6 +43,7 @@ from app.routers import billing as billing_router
 from app.routers import webhooks as webhooks_router
 from app.routers import products as products_router
 from app.routers import telegram as telegram_router
+from app.routers import system as system_router
 
 import app.database.main_models
 import app.database.analytics_models
@@ -127,6 +129,7 @@ app.include_router(products_router.router)
 app.include_router(products_router.admin_router)
 app.include_router(telegram_router.router)
 app.include_router(metrics_router.router)
+app.include_router(system_router.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -174,8 +177,18 @@ async def generate(
         ai_model_repo: AiModelRepository = Depends(dependencies.get_ai_model_repository),
         user_repo: UserRepository = Depends(dependencies.get_user_repository),
         task_repo: TaskRepository = Depends(dependencies.get_task_repository),
-        plan_access_repo: PlanAccessRepository = Depends(dependencies.get_plan_access_repository)
+        plan_access_repo: PlanAccessRepository = Depends(dependencies.get_plan_access_repository),
+        system_repo: SystemRepository = Depends(dependencies.get_system_repository)
 ):
+    is_maintenance, maint_message = await system_repo.is_maintenance_mode()
+
+    if is_maintenance:
+
+        if not user.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=maint_message
+            )
 
     s3_client = request.app.state.s3_client
 

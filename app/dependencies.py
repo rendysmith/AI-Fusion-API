@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app import schemas
 from app.database.main_models import User
 from app.database.engine import async_session_factory
+from app.database.repositories.system_repository import SystemRepository
 from app.database.subscription_models import UserSubscription, SubscriptionPlan
 from app.services.firebase_service import verify_firebase_token
 from app.settings import settings
@@ -138,6 +139,10 @@ def get_product_repository() -> ProductRepository:
     return ProductRepository(async_session_factory)
 
 
+def get_system_repository(
+        redis_client: aioredis.Redis = Depends(get_redis_client)
+) -> SystemRepository:
+    return SystemRepository(redis_client)
 
 
 def get_billing_service(
