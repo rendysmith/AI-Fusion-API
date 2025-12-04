@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, field_validator, ConfigDict, computed_fie
 
 class AiModelBase(BaseModel):
     name: str = Field(..., min_length=1)
-    slug: str = Field(..., min_length=1, pattern=r'^[a-z0-9-]+$')
+    slug: str = Field(..., min_length=1, pattern=r'^[a-z0-9-./]+$')
     description: str
     provider: str
     category: Literal["video", "image", "text", "audio"]
