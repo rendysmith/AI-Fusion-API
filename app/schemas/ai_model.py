@@ -50,7 +50,7 @@ class AiModelUpdate(BaseModel):
 
 class ModelPricing(BaseModel):
     cost: float
-    unit: Literal["second", "generation", "image"]
+    unit: Literal["second", "generation", "image", "video"]
     display_text: str
 
 
