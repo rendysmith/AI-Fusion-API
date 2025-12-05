@@ -59,10 +59,8 @@ class AiModelResponse(AiModelBase):
     created_at: datetime
     updated_at: datetime
 
-
     @computed_field
     def pricing(self) -> ModelPricing:
-
         settings_data = {}
         if isinstance(self.settings, str):
             try:
@@ -72,17 +70,21 @@ class AiModelResponse(AiModelBase):
         elif isinstance(self.settings, dict):
             settings_data = self.settings
 
-
         base_cost = float(settings_data.get("cost", 0))
 
-
+        manual_unit = settings_data.get("unit")
 
         unit = "generation"
         suffix = "за генерацию"
 
-        DURATION_MODELS = ["sora-2", "veo-3-quality", "veo-3-fast", "video-model"]
 
-        if self.slug in DURATION_MODELS or self.category == "video":
+
+        if manual_unit == "video":
+            unit = "video"
+            suffix = "за видео"
+
+
+        elif manual_unit == "second" or self.slug in ["sora-2", "veo-3-quality", "veo-3-fast"]:
             unit = "second"
             suffix = "за сек."
 
