@@ -36,7 +36,7 @@ from .auth import (
     TelegramWebhookPayload
 )
 
-# --- ai_model.py ---
+
 from .ai_model import (
     AiModelBase,
     AiModelCreate,
@@ -93,7 +93,8 @@ from .admin import (
     AdminGenerationListResponse,
     RevenueMetrics,
     AdminMetricsResponse,
-    BulkCreditRequest
+    BulkCreditRequest,
+    AdminTaskDetailResponse
 )
 
 

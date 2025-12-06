@@ -77,6 +77,60 @@ async def get_all_generations(
     )
 
 
+@admin_router.get(
+    "/generations/{task_id}",
+    response_model=schemas.AdminTaskDetailResponse,
+    summary="[Admin] Get detailed info about a specific generation task"
+)
+async def get_task_details(
+        task_id: str,
+        task_repo: TaskRepository = Depends(get_task_repository)
+):
+    task = await task_repo.get_task_with_user(task_id)
+
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+
+    params = task.params if isinstance(task.params, dict) else {}
+
+
+    prompt_text = params.get("prompt") or params.get("text_prompt") or "Без промпта"
+
+
+    result_data = task.result if isinstance(task.result, dict) else {}
+    video_url = result_data.get("video_url") or result_data.get("url")
+    thumbnail_url = result_data.get("thumbnail_url") or result_data.get("cover_url")
+
+
+    completed_at = None
+    if task.status in ["completed", "failed"]:
+        completed_at = task.updated_at
+
+
+    return schemas.AdminTaskDetailResponse(
+        id=task.id,
+        status=task.status,
+        model_slug=task.model_slug,
+        prompt=prompt_text,
+
+        video_url=video_url,
+        thumbnail_url=thumbnail_url,
+        error=task.error,
+
+        parameters=params,
+
+        cost=task.cost or 0.0,
+        credits_used=task.cost or 0.0,
+
+        user=task.user,
+
+        created_at=task.created_at,
+        completed_at=completed_at,
+        started_at=None,
+
+        external_task_id=task.provider_job_id
+    )
 
 @admin_router.get(
     "/metrics",
@@ -145,3 +199,6 @@ async def get_admin_metrics(
     except Exception as e:
         logging.error(f"Failed to calculate /admin/metrics: {e}", exc_info=True)
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to calculate metrics")
+
+
+

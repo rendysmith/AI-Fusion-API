@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     APP_TITLE: str = "Main API v3"
     APP_VERSION: str = "3.0.0"
 
-    WORKER_MAX_CONCURRENT_TASKS: int = 10
+    WORKER_MAX_CONCURRENT_TASKS: int = 30
 
     WORKER_ID: str = Field('main-1')
 
@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     DATABASE_URL: str
 
     BOT_SECRET_KEY: str
+
+    ADMIN_TELEGRAM_ID: int
+
+    BOT_TOKEN: str
 
     REDIS_URL: str
 

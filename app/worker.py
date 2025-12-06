@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import time
+import traceback
 from datetime import datetime
 
 import aiobotocore.client
@@ -16,6 +18,7 @@ from app.database.repositories.task_repository import TaskRepository
 from app.database.repositories.user_repository import UserRepository
 from app.services.providers import kie_ai_provider, openai_provider, unifically_provider
 from app.services.s3_uploader import S3UploaderService
+from app.services.telegram_notifier import send_error_alert
 from app.settings import settings
 from app.utils.error_mapper import get_user_friendly_error
 
@@ -25,8 +28,8 @@ logging.basicConfig(
 )
 
 WORKER_ID = settings.WORKER_ID
+# Это общий лимит задач, которые могут выполняться одновременно
 MAX_CONCURRENT_TASKS = settings.WORKER_MAX_CONCURRENT_TASKS
-
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +38,6 @@ MODEL_PROCESSORS_PRIMARY = {
     'veo-3-quality': kie_ai_provider.generate_veo_kie_ai_video,
     'veo-3-fast': kie_ai_provider.generate_veo_kie_ai_video
 }
-
 
 MODEL_PROCESSORS_FALLBACK = {
     'sora-2': openai_provider.generate_sora_openai_video,
@@ -50,11 +52,13 @@ async def process_task(session: aiohttp.ClientSession,
                        s3_uploader: S3UploaderService,
                        circuit_breaker: CircuitBreakerRepository
                        ):
+
+    start_time = time.time()
+
     task_id = task_data["_id"]
     logger.info(f"TaskID: {task_id} | Начинаю обработку.")
 
     await task_repo.upsert_and_start_task(task_data, WORKER_ID)
-
 
     model_name = task_data["model"]
     params = task_data.get("params", {})
@@ -63,11 +67,9 @@ async def process_task(session: aiohttp.ClientSession,
     delay_factor = task_data.get("unlimited_delay_factor", 1.0)
 
     try:
-
         is_circuit_open = await circuit_breaker.is_open(model_name)
 
         if is_circuit_open:
-
             logger.warning(f"TaskID: {task_id} | Цепь разорвана. Использую Fallback (OpenAI).")
             processor = MODEL_PROCESSORS_FALLBACK.get(model_name)
             if not processor:
@@ -81,13 +83,11 @@ async def process_task(session: aiohttp.ClientSession,
             )
 
         else:
-
             processor = MODEL_PROCESSORS_PRIMARY.get(model_name)
             if not processor:
                 raise ValueError(f"Не найден Primary-обработчик для {model_name}")
 
             try:
-
                 result_data = await processor(
                     session=session,
                     params=params,
@@ -97,7 +97,6 @@ async def process_task(session: aiohttp.ClientSession,
                     model_name=model_name
                 )
             except Exception as error:
-
                 error_str = str(error)
 
 
@@ -106,7 +105,6 @@ async def process_task(session: aiohttp.ClientSession,
                     raise error
 
                 logger.warning(f"TaskID: {task_id} | Primary упал ({error}). Пробую Fallback (OpenAI)...")
-
 
                 fallback_processor = MODEL_PROCESSORS_FALLBACK.get(model_name)
                 if not fallback_processor:
@@ -123,18 +121,12 @@ async def process_task(session: aiohttp.ClientSession,
         logger.info(f"TaskID: {task_id} | Задача успешно завершена.")
 
         if plan_is_unlimited and delay_factor > 1.0:
-
             original_duration = params.get('duration', 10)
-
             delay_seconds = (original_duration * delay_factor) - original_duration
-
             final_delay = max(delay_seconds, 180.0)
-
             logger.info(f"TaskID: {task_id} | Задержка в режиме Unlimited: {final_delay:.0f} сек.")
-
             await asyncio.sleep(final_delay)
             logger.info(f"TaskID: {task_id} | Задержка завершена.")
-
 
         try:
             created_time = datetime.fromisoformat(task_data["created_at"])
@@ -152,18 +144,28 @@ async def process_task(session: aiohttp.ClientSession,
             logger.error(f"TaskID: {task_id} | ОШИБКА ЗАПИСИ В АНАЛИТИКУ: {analytics_e}", exc_info=True)
 
     except Exception as e:
+
+        duration = time.time() - start_time
+
         logger.error(f"TaskID: {task_id} | CRITICAL ERROR: {e}", exc_info=True)
 
+        full_traceback = traceback.format_exc()
+
+        asyncio.create_task(
+            send_error_alert(
+                task_data=task_data,
+                error=e,
+                traceback_str=full_traceback,
+                duration=duration
+            )
+        )
 
         friendly_error = get_user_friendly_error(e)
-
         await task_repo.fail_task(task_id, friendly_error)
-
         await refund_on_failure(task_data, user_repo)
 
 
 async def refund_on_failure(task: dict, user_repo: UserRepository):
-
     user_id_to_refund = task.get("user_id")
     cost_to_refund = task.get("cost")
     task_id = task["_id"]
@@ -182,25 +184,23 @@ async def refund_on_failure(task: dict, user_repo: UserRepository):
 
 
 async def handle_message(
-    message: dict,
-    sqs_client: aiobotocore.client.BaseClient,
-    http_session: aiohttp.ClientSession,
-    s3_client: aiobotocore.client.BaseClient,
-    task_repo: TaskRepository,
-    analytics_repo: AnalyticsRepository,
-    user_repo: UserRepository,
-    circuit_breaker_repo: CircuitBreakerRepository
+        message: dict,
+        sqs_client: aiobotocore.client.BaseClient,
+        http_session: aiohttp.ClientSession,
+        s3_client: aiobotocore.client.BaseClient,
+        task_repo: TaskRepository,
+        analytics_repo: AnalyticsRepository,
+        user_repo: UserRepository,
+        circuit_breaker_repo: CircuitBreakerRepository
 ):
-
     task_data = None
     receipt_handle = message['ReceiptHandle']
 
     try:
         task_data = json.loads(message['Body'])
-
         s3_uploader = S3UploaderService(s3_client)
-
         task_id = task_data.get("_id", "unknown_id")
+
         logger.info(f"TaskID: {task_id} | Задача получена из очереди.")
 
         await process_task(
@@ -212,7 +212,6 @@ async def handle_message(
             user_repo=user_repo,
             circuit_breaker=circuit_breaker_repo
         )
-
 
         await sqs_client.delete_message(
             QueueUrl=settings.YANDEX_QUEUE_URL,
@@ -229,6 +228,16 @@ async def handle_message(
         )
 
 
+async def run_task_with_semaphore(sem, *args):
+    """
+    Запускает задачу и ГАРАНТИРОВАННО освобождает семафор после завершения.
+    """
+    try:
+        await handle_message(*args)
+    finally:
+        sem.release()
+
+
 async def main():
     task_repo = TaskRepository(async_session_factory)
     analytics_repo = AnalyticsRepository(async_session_factory)
@@ -237,11 +246,13 @@ async def main():
     redis_client = get_redis_client()
     circuit_breaker_repo = CircuitBreakerRepository(redis_client)
 
-    logger.info(f"Воркер {WORKER_ID} запущен. Максимум одновременных задач: {MAX_CONCURRENT_TASKS}")
+
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
+
+    logger.info(f"Воркер {WORKER_ID} запущен. Лимит параллельных задач: {MAX_CONCURRENT_TASKS}")
 
     timeout = ClientTimeout(total=600)
     aws_session = get_session()
-
 
     async with aiohttp.ClientSession(timeout=timeout) as http_session:
         async with aws_session.create_client(
@@ -253,45 +264,65 @@ async def main():
         ) as s3_client:
 
             async with aws_session.create_client(
-                'sqs',
-                region_name=settings.YANDEX_QUEUE_REGION,
-                endpoint_url=settings.YANDEX_QUEUE_ENDPOINT,
-                aws_access_key_id=settings.YANDEX_SQS_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.YANDEX_SQS_SECRET_ACCESS_KEY
+                    'sqs',
+                    region_name=settings.YANDEX_QUEUE_REGION,
+                    endpoint_url=settings.YANDEX_QUEUE_ENDPOINT,
+                    aws_access_key_id=settings.YANDEX_SQS_ACCESS_KEY_ID,
+                    aws_secret_access_key=settings.YANDEX_SQS_SECRET_ACCESS_KEY
             ) as sqs_client:
 
                 logger.info(" [*] Ожидание задач из YMQS. Для выхода нажмите CTRL+C")
+                background_tasks = set()
 
                 while True:
-                    try:
 
+                    if semaphore.locked():
+                        await asyncio.sleep(0.5)
+                        continue
+
+                    active_count = len(background_tasks)
+                    free_slots = MAX_CONCURRENT_TASKS - active_count
+
+                    if free_slots <= 0:
+                        await asyncio.sleep(0.5)
+                        continue
+
+                    messages_to_fetch = min(free_slots, 10)
+
+                    try:
                         response = await sqs_client.receive_message(
                             QueueUrl=settings.YANDEX_QUEUE_URL,
-                            MaxNumberOfMessages=MAX_CONCURRENT_TASKS,
-                            WaitTimeSeconds=20
+                            MaxNumberOfMessages=messages_to_fetch,
+                            WaitTimeSeconds=10
                         )
 
                         if 'Messages' in response:
                             messages = response['Messages']
-                            logger.info(f"Получено {len(messages)} задач.")
+                            fetched_count = len(messages)
 
+                            if fetched_count > 0:
+                                logger.info(
+                                    f"Взято {fetched_count} задач. (Активных: {active_count} + {fetched_count})")
 
-                            tasks = []
-                            for message in messages:
-                                tasks.append(
-                                    handle_message(
-                                        message=message,
-                                        sqs_client=sqs_client,
-                                        http_session=http_session,
-                                        s3_client=s3_client,
-                                        task_repo=task_repo,
-                                        analytics_repo=analytics_repo,
-                                        user_repo=user_repo,
-                                        circuit_breaker_repo=circuit_breaker_repo
+                                for message in messages:
+                                    await semaphore.acquire()
+
+                                    task = asyncio.create_task(
+                                        run_task_with_semaphore(
+                                            semaphore,
+                                            message,
+                                            sqs_client,
+                                            http_session,
+                                            s3_client,
+                                            task_repo,
+                                            analytics_repo,
+                                            user_repo,
+                                            circuit_breaker_repo
+                                        )
                                     )
-                                )
-                            await asyncio.gather(*tasks)
 
+                                    background_tasks.add(task)
+                                    task.add_done_callback(background_tasks.discard)
                         else:
                             pass
 

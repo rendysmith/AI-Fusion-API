@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from .plan import AdminSubscriptionPlanResponse
 from .subscription import SubscriptionDetailResponse
 
@@ -94,3 +94,42 @@ class AdminMetricsResponse(BaseModel):
 class BulkCreditRequest(BaseModel):
     identifiers: List[str]
     amount: int
+
+
+class AdminTaskUserDetail(BaseModel):
+    firebase_uid: str
+    email: Optional[str] = None
+    username: Optional[str] = None
+    telegram_id: Optional[int] = None
+    balance: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+
+class AdminTaskDetailResponse(BaseModel):
+    id: str
+    status: str
+    prompt: Optional[str] = None
+    model_slug: str
+
+    video_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+
+    error: Optional[str] = None
+
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+
+    cost: float
+    credits_used: float
+
+    user: Optional[AdminTaskUserDetail] = None
+
+    created_at: datetime
+
+    completed_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+
+    external_task_id: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)

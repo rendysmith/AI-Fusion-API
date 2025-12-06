@@ -214,3 +214,13 @@ class TaskRepository:
             total = (await session.scalar(stmt_count)) or 0
 
             return tasks, total
+
+    async def get_task_with_user(self, task_id: str) -> Optional[GenerationTask]:
+        async with self.session_factory() as session:
+            stmt = (
+                select(GenerationTask)
+                .where(GenerationTask.id == task_id)
+                .options(selectinload(GenerationTask.user))
+            )
+            result = await session.execute(stmt)
+            return result.scalars().first()
