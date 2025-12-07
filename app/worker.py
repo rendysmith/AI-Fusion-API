@@ -16,7 +16,7 @@ from app.database.repositories.analytics_repository import AnalyticsRepository
 from app.database.repositories.circuit_breaker_repository import CircuitBreakerRepository
 from app.database.repositories.task_repository import TaskRepository
 from app.database.repositories.user_repository import UserRepository
-from app.services.providers import kie_ai_provider, openai_provider, unifically_provider
+from app.services.providers import kie_ai_provider, openai_provider, unifically_provider, grsai_provider
 from app.services.s3_uploader import S3UploaderService
 from app.services.telegram_notifier import send_error_alert
 from app.settings import settings
@@ -35,12 +35,12 @@ logger = logging.getLogger(__name__)
 
 MODEL_PROCESSORS_PRIMARY = {
     'sora-2': unifically_provider.generate_sora_video,
-    'veo-3-quality': kie_ai_provider.generate_veo_kie_ai_video,
-    'veo-3-fast': kie_ai_provider.generate_veo_kie_ai_video
+    'veo-3-quality': grsai_provider.generate_veo_grsai,
+    'veo-3-fast': grsai_provider.generate_veo_grsai
 }
 
 MODEL_PROCESSORS_FALLBACK = {
-    'sora-2': openai_provider.generate_sora_openai_video,
+    'sora-2': grsai_provider.generate_sora_grsai,
 }
 
 
@@ -65,6 +65,8 @@ async def process_task(session: aiohttp.ClientSession,
 
     plan_is_unlimited = task_data.get("plan_is_unlimited", False)
     delay_factor = task_data.get("unlimited_delay_factor", 1.0)
+
+    primary_exception = None
 
     try:
         is_circuit_open = await circuit_breaker.is_open(model_name)
@@ -97,8 +99,10 @@ async def process_task(session: aiohttp.ClientSession,
                     model_name=model_name
                 )
             except Exception as error:
-                error_str = str(error)
 
+                primary_exception = error
+
+                error_str = str(error)
 
                 if "400" in error_str:
                     logger.error(f"TaskID: {task_id} | Ошибка 400 (Bad Request). Fallback ОТМЕНЕН. Ошибка: {error}")
@@ -156,7 +160,8 @@ async def process_task(session: aiohttp.ClientSession,
                 task_data=task_data,
                 error=e,
                 traceback_str=full_traceback,
-                duration=duration
+                duration=duration,
+                primary_error=primary_exception
             )
         )
 

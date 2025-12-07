@@ -210,30 +210,24 @@ async def get_user_subscription(
     )
 
 
-@router.get("/debug-egress", tags=["Debug"])
-async def debug_egress(
-        http_session: aiohttp.ClientSession = Depends(get_http_session)
+@router.delete(
+    "/generations/{task_id}",
+    summary="Delete a generation task",
+    status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_generation(
+        task_id: str,
+        user: User = Depends(get_current_user),
+        task_repo: TaskRepository = Depends(get_task_repository)
 ):
-    """
-    Проверяет, есть ли у контейнера ВЫХОД в интернет (Egress).
-    """
-    target_url = "https://www.google.com"
-    logging.info(f"DEBUG: Пытаюсь 'достучаться' до {target_url}...")
+    success = await task_repo.delete_user_task(task_id, user.id)
 
-    try:
+    if not success:
 
-        async with http_session.get(target_url, timeout=5.0) as response:
-            logging.info(f"DEBUG: Успех! Статус от Google: {response.status}")
-            return {
-                "status": "SUCCESS",
-                "target": target_url,
-                "http_code": response.status
-            }
-    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found or access denied"
+        )
 
-        logging.error(f"DEBUG: ПРОВАЛ! Ошибка Egress: {e}")
-        return {
-            "status": "FAILED",
-            "target": target_url,
-            "error": str(e)
-        }
+    return
+

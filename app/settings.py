@@ -67,4 +67,6 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str
     PERPLEXITY_API_KEY: str
 
+    GRSAI_API_KEY: str
+
 settings = Settings()

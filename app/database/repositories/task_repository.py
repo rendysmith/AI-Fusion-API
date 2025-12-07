@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, Dict, Any, Tuple, List
-from sqlalchemy import select, update, func, desc
+from sqlalchemy import select, update, func, desc, delete
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -224,3 +224,18 @@ class TaskRepository:
             )
             result = await session.execute(stmt)
             return result.scalars().first()
+
+    async def delete_user_task(self, task_id: str, user_id: int) -> bool:
+
+        async with self.session_factory() as session:
+            stmt = (
+                delete(GenerationTask)
+                .where(
+                    GenerationTask.id == task_id,
+                    GenerationTask.user_id == user_id
+                )
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+
+            return result.rowcount > 0

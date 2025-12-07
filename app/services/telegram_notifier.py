@@ -1,4 +1,6 @@
 import logging
+from typing import Optional
+
 import aiohttp
 import json
 from app.settings import settings
@@ -18,7 +20,8 @@ async def send_error_alert(
         task_data: dict,
         error: Exception,
         traceback_str: str,
-        duration: float
+        duration: float,
+        primary_error: Optional[Exception] = None
 ):
 
     if not settings.BOT_TOKEN or not settings.ADMIN_TELEGRAM_ID:
@@ -38,6 +41,10 @@ async def send_error_alert(
     if len(params_str) > 500:
         params_str = params_str[:500] + "\n... (truncated)"
 
+    primary_error_text = ""
+    if primary_error:
+        primary_error_text = f"⚠️ <b>Primary Failed:</b> {str(primary_error)[:200]}\n"
+
     header = (
         f"🚨 <b>WORKER CRITICAL ERROR</b>\n\n"
         f"🆔 <b>Task:</b> <code>{task_id}</code>\n"
@@ -45,6 +52,7 @@ async def send_error_alert(
         f"🤖 <b>Model:</b> {model}\n"
         f"💰 <b>Cost:</b> {cost}\n"
         f"⏱ <b>Duration:</b> {duration:.2f}s\n"
+        f"{primary_error_text}"
         f"❌ <b>Error:</b> {str(error)[:200]}\n"
     )
 
