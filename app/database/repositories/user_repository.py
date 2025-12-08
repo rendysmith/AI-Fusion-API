@@ -10,8 +10,11 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import selectinload
 
 from app import schemas
+from app.database.billing_models import PaymentInvoice
+from app.database.metric_models import Visitor
 from app.database.subscription_models import UserSubscription, SubscriptionPlan
 from app.database.main_models import User
+from app.database.task_models import GenerationTask
 
 
 class BaseRepository:
@@ -239,3 +242,48 @@ class UserRepository(BaseRepository):
 
             await session.commit()
             return True
+
+    async def get_user_full_details(self, user_id: int) -> dict:
+        async with self.session_factory() as session:
+
+            stmt_user = (
+                select(User)
+                .where(User.id == user_id)
+                .options(
+                    selectinload(User.subscription).joinedload(UserSubscription.plan)
+                )
+            )
+            user = (await session.execute(stmt_user)).scalars().first()
+            if not user:
+                return None
+
+            stmt_visitor = select(Visitor).where(Visitor.user_id == user_id)
+            visitor = (await session.execute(stmt_visitor)).scalars().first()
+
+
+            stmt_tasks = select(
+                func.count(GenerationTask.id).label("total"),
+                func.count(GenerationTask.id).filter(GenerationTask.status == 'completed').label("success"),
+                func.sum(GenerationTask.cost).label("spent")
+            ).where(GenerationTask.user_id == user_id)
+
+            task_stats = (await session.execute(stmt_tasks)).one()
+
+
+            stmt_money = select(func.sum(PaymentInvoice.amount)).where(
+                PaymentInvoice.user_id == user_id,
+                PaymentInvoice.status == 'paid'
+            )
+            money_spent = (await session.scalar(stmt_money)) or 0
+
+
+            return {
+                "user": user,
+                "visitor": visitor,
+                "stats": {
+                    "total_generations": task_stats.total or 0,
+                    "successful_generations": task_stats.success or 0,
+                    "total_credits_spent": task_stats.spent or 0.0,
+                    "total_money_paid": money_spent
+                }
+            }

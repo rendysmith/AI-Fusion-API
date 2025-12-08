@@ -157,3 +157,58 @@ async def add_bulk_credits(
         "failed_count": len(failed_identifiers),
         "failed_identifiers": failed_identifiers
     }
+
+
+@admin_router.get(
+    "/{user_id}",
+    response_model=schemas.AdminUserFullDetailResponse,
+    summary="[Admin] Get full detailed profile of a user"
+)
+async def get_user_detail_admin(
+        user_id: int,
+        user_repo: UserRepository = Depends(get_user_repository)
+):
+    data = await user_repo.get_user_full_details(user_id)
+
+    if not data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_obj = data["user"]
+    visitor_obj = data["visitor"]
+    stats_dict = data["stats"]
+
+
+    traffic_info = schemas.UserTrafficInfo()
+    if visitor_obj:
+        traffic_info = schemas.UserTrafficInfo(
+            first_visit_at=visitor_obj.first_visit_at,
+            utm_source=visitor_obj.utm_source,
+            utm_medium=visitor_obj.utm_medium,
+            utm_campaign=visitor_obj.utm_campaign,
+            utm_term=visitor_obj.utm_term,
+            referrer=visitor_obj.referrer
+        )
+
+
+    usage_stats = schemas.UserUsageStats(
+        total_generations=stats_dict["total_generations"],
+        successful_generations=stats_dict["successful_generations"],
+        total_credits_spent=stats_dict["total_credits_spent"],
+        total_money_paid=stats_dict["total_money_paid"]
+    )
+
+
+    return schemas.AdminUserFullDetailResponse(
+        id=user_obj.id,
+        firebase_uid=user_obj.firebase_uid,
+        email=user_obj.email,
+        username=user_obj.username,
+        telegram_id=user_obj.telegram_id,
+        balance=user_obj.balance,
+        is_admin=user_obj.is_admin,
+        is_blocked=user_obj.is_blocked,
+        created_at=user_obj.created_at,
+        subscription=user_obj.subscription,
+        stats=usage_stats,
+        traffic=traffic_info
+    )
