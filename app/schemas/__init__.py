@@ -131,10 +131,17 @@ from .plan_access import (
 from .metric import (
     VisitorTrackRequest,
     AnalyticsVisitors,
-    AnalyticsDailyResponse
+    AnalyticsDailyResponse,
+    VisitorLogResponse,
+    VisitorLogItem
 )
 
 from .admin_user_traffic import (
     UserTrafficSourceResponse,
     UserTrafficListResponse
+)
+
+from .admin_payment import (
+    AdminPaymentItem,
+    AdminPaymentListResponse
 )

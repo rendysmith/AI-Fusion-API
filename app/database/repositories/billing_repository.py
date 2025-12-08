@@ -1,7 +1,10 @@
 import uuid
-from sqlalchemy import select, update, Row, RowMapping, func
+from sqlalchemy import select, update, Row, RowMapping, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from typing import List, Optional, Any, Coroutine, Sequence
+from typing import List, Optional, Any, Coroutine, Sequence, Tuple
+
+from sqlalchemy.orm import selectinload
+
 from app.database.billing_models import Product, Payment, PaymentInvoice
 
 
@@ -93,3 +96,31 @@ class BillingRepository:
 
         async with self.session_factory() as session:
             return await session.get(Payment, internal_id)
+
+    async def get_all_payments_paginated(
+            self,
+            page: int,
+            limit: int
+    ) -> Tuple[List[Payment], int]:
+        offset = (page - 1) * limit
+
+        async with self.session_factory() as session:
+
+            stmt = (
+                select(Payment)
+                .options(
+                    selectinload(Payment.user),
+                    selectinload(Payment.product)
+                )
+                .order_by(desc(Payment.created_at))
+                .limit(limit)
+                .offset(offset)
+            )
+
+            result = await session.execute(stmt)
+            payments = result.scalars().all()
+
+            count_stmt = select(func.count(Payment.internal_id))
+            total = await session.scalar(count_stmt) or 0
+
+            return payments, total

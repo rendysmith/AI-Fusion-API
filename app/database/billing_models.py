@@ -1,5 +1,6 @@
 from sqlalchemy import Column, String, Integer, DateTime, func, Boolean, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
 
 from app.database.base import Base
 
@@ -75,6 +76,9 @@ class Payment(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user = relationship("User", lazy="selectin")
+    product = relationship("Product", lazy="selectin")
 
 
 class PaymentInvoice(Base):

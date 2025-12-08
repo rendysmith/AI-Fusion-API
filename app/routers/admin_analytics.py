@@ -10,7 +10,8 @@ from app.database.main_models import User
 from app.database.repositories.analytics_repository import AnalyticsRepository
 from app.database.repositories.metric_repository import VisitorRepository
 from app.dependencies import get_visitor_repository, get_current_admin_user, get_async_session, get_analytics_repository
-from app.schemas import AnalyticsDailyResponse, AnalyticsVisitors, UserTrafficListResponse, UserTrafficSourceResponse
+from app.schemas import AnalyticsDailyResponse, AnalyticsVisitors, UserTrafficListResponse, UserTrafficSourceResponse, \
+    VisitorLogResponse, VisitorLogItem
 
 admin_router = APIRouter(
     prefix="/admin/analytics",
@@ -123,6 +124,31 @@ async def get_traffic_sources_report(
         ))
 
     return UserTrafficListResponse(
+        items=mapped_items,
+        total=total,
+        page=page,
+        limit=limit
+    )
+
+
+@admin_router.get(
+    "/raw-visits",
+    response_model=VisitorLogResponse,
+    summary="[Admin] Get raw log of ALL visitors (registered + guests)"
+)
+async def get_raw_visits_log(
+        page: int = Query(1, ge=1),
+        limit: int = Query(50, ge=1, le=100),
+        date_from: Optional[date] = Query(None),
+        date_to: Optional[date] = Query(None),
+        analytics_repo: AnalyticsRepository = Depends(get_analytics_repository)
+):
+    visitors, total = await analytics_repo.get_raw_visitors_log(page, limit, date_from, date_to)
+
+    mapped_items = [VisitorLogItem.model_validate(v) for v in visitors]
+
+
+    return VisitorLogResponse(
         items=mapped_items,
         total=total,
         page=page,

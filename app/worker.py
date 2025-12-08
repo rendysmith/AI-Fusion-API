@@ -28,7 +28,7 @@ logging.basicConfig(
 )
 
 WORKER_ID = settings.WORKER_ID
-# Это общий лимит задач, которые могут выполняться одновременно
+
 MAX_CONCURRENT_TASKS = settings.WORKER_MAX_CONCURRENT_TASKS
 
 logger = logging.getLogger(__name__)
@@ -151,19 +151,33 @@ async def process_task(session: aiohttp.ClientSession,
 
         duration = time.time() - start_time
 
-        logger.error(f"TaskID: {task_id} | CRITICAL ERROR: {e}", exc_info=True)
+        error_str = str(e).lower()
+        is_user_error = any(marker in error_str for marker in [
+            "400",
+            "violation",
+            "content policy",
+            "safety",
+            "moderation",
+            "nsfw",
+            "censorship"
+        ])
 
-        full_traceback = traceback.format_exc()
+        if is_user_error:
+            logger.warning(f"TaskID: {task_id} | Task Failed (User Error): {e}")
 
-        asyncio.create_task(
-            send_error_alert(
-                task_data=task_data,
-                error=e,
-                traceback_str=full_traceback,
-                duration=duration,
-                primary_error=primary_exception
+        else:
+            logger.error(f"TaskID: {task_id} | CRITICAL ERROR: {e}", exc_info=True)
+
+            full_traceback = traceback.format_exc()
+            asyncio.create_task(
+                send_error_alert(
+                    task_data=task_data,
+                    error=e,
+                    traceback_str=full_traceback,
+                    duration=duration,
+                    primary_error=primary_exception
+                )
             )
-        )
 
         friendly_error = get_user_friendly_error(e)
         await task_repo.fail_task(task_id, friendly_error)

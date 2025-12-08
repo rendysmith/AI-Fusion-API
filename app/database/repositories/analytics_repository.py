@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List, Tuple
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, desc
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.database.analytics_models import DailySystemStats, UserModelStats, CompletedTaskLog
@@ -283,3 +283,32 @@ class AnalyticsRepository:
             rows = result.all()
 
             return rows, total
+
+    async def get_raw_visitors_log(
+            self,
+            page: int,
+            limit: int,
+            date_from: Optional[date] = None,
+            date_to: Optional[date] = None
+    ) -> Tuple[List[Visitor], int]:
+
+        offset = (page - 1) * limit
+        async with self.session_factory() as session:
+
+            stmt = select(Visitor).order_by(desc(Visitor.first_visit_at))
+
+
+            if date_from and date_to:
+                start_dt = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
+                end_dt = datetime.combine(date_to, datetime.max.time(), tzinfo=timezone.utc)
+                stmt = stmt.where(Visitor.first_visit_at.between(start_dt, end_dt))
+
+
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = await session.scalar(count_stmt) or 0
+
+
+            stmt = stmt.limit(limit).offset(offset)
+            result = await session.execute(stmt)
+
+            return result.scalars().all(), total
