@@ -45,6 +45,7 @@ from app.routers import products as products_router
 from app.routers import telegram as telegram_router
 from app.routers import system as system_router
 from app.routers import storage as storage_router
+from app.routers import admin_billing as admin_billing_router
 
 import app.database.main_models
 import app.database.analytics_models
@@ -132,6 +133,7 @@ app.include_router(telegram_router.router)
 app.include_router(metrics_router.router)
 app.include_router(system_router.router)
 app.include_router(storage_router.router)
+app.include_router(admin_billing_router.admin_router)
 
 app.add_middleware(
     CORSMiddleware,
