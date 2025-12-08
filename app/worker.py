@@ -34,13 +34,13 @@ MAX_CONCURRENT_TASKS = settings.WORKER_MAX_CONCURRENT_TASKS
 logger = logging.getLogger(__name__)
 
 MODEL_PROCESSORS_PRIMARY = {
-    'sora-2': unifically_provider.generate_sora_video,
+    'sora-2': grsai_provider.generate_sora_grsai,
     'veo-3-quality': grsai_provider.generate_veo_grsai,
     'veo-3-fast': grsai_provider.generate_veo_grsai
 }
 
 MODEL_PROCESSORS_FALLBACK = {
-    'sora-2': grsai_provider.generate_sora_grsai,
+    'sora-2': unifically_provider.generate_sora_video,
 }
 
 
@@ -108,11 +108,11 @@ async def process_task(session: aiohttp.ClientSession,
                     logger.error(f"TaskID: {task_id} | Ошибка 400 (Bad Request). Fallback ОТМЕНЕН. Ошибка: {error}")
                     raise error
 
-                logger.warning(f"TaskID: {task_id} | Primary упал ({error}). Пробую Fallback (OpenAI)...")
+                logger.warning(f"TaskID: {task_id} | Primary Provider упал ({error}). Пробую Fallback...")
 
                 fallback_processor = MODEL_PROCESSORS_FALLBACK.get(model_name)
                 if not fallback_processor:
-                    raise ValueError(f"Kie AI упал, но Fallback-обработчик не найден!")
+                    raise ValueError(f"Primary Provider упал, но Fallback-обработчик не найден!")
 
                 result_data = await fallback_processor(
                     session=session,

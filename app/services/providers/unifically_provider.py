@@ -90,7 +90,7 @@ async def _start_sora_task(session: aiohttp.ClientSession,
                 return api_task_id
 
         except aiohttp.ClientResponseError as e:
-            # Ретраи только для серверных ошибок (5xx)
+
             if e.status in [500, 502, 503, 504, 524] and attempt < SORA_POST_MAX_RETRIES - 1:
                 logging.warning(
                     f"SORA: Ошибка сервера ({e.status}) при запросе task_id. Попытка {attempt + 1}/{SORA_POST_MAX_RETRIES}. "
@@ -99,11 +99,11 @@ async def _start_sora_task(session: aiohttp.ClientSession,
                 await asyncio.sleep(SORA_POST_RETRY_DELAY)
                 continue
 
-            # Остальные ошибки пробрасываем (чтобы Circuit Breaker мог их увидеть)
             raise
+
         except SoraError:
-            # Наши кастомные ошибки (в т.ч. 400) пробрасываем сразу
             raise
+
         except Exception as e:
             logging.error(f"SORA: Неожиданная ошибка при запросе task_id: {e}", exc_info=True)
             raise SoraError(f"SORA: Произошла неожиданная ошибка: {e}") from e
@@ -146,6 +146,9 @@ async def _poll_sora_result(session: aiohttp.ClientSession, api_task_id: str) ->
 
                 response_data = await resp.json()
                 data_block = response_data.get('data', {})
+
+                logging.info(response_data)
+
                 status = data_block.get('status')
 
                 if status == 'failed':
@@ -255,3 +258,59 @@ async def generate_sora_video(session: aiohttp.ClientSession,
                 f"TaskID: {task_id} | Ошибка Unifically: {e}. Fallback только для текущей задачи (если это не 400).")
 
         raise
+
+
+if __name__ == "__main__":
+    from aiobotocore.session import get_session
+
+
+    async def manual_sora_run():
+        print("🚀 Запуск теста Unifically Sora Provider...")
+
+        # 1. Создаем реальный S3 клиент (как в main.py)
+        session_s3 = get_session()
+        async with session_s3.create_client(
+                's3',
+                region_name=settings.YANDEX_REGION,
+                endpoint_url=settings.YANDEX_STORAGE_ENDPOINT,
+                aws_access_key_id=settings.YANDEX_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.YANDEX_SECRET_ACCESS_KEY
+        ) as s3_client:
+
+            # 2. Инициализируем сервисы
+            uploader = S3UploaderService(s3_client)
+
+            async with aiohttp.ClientSession() as http_session:
+
+                # --- ТЕСТ SORA ---
+                print("\n🎥 Тестируем Sora-2...")
+                test_params = {
+                                  "prompt": "Создай девушку со светлыми волосами лет 25, идущий вдоль берега Персидского залива с видом на Бурдж аль Араб и поющие песню я тебя рисовал группа Ненси ",
+                                  "model_name": "sora-2",
+                                  "orientation": "portrait",
+                                  "duration": 10
+                                }
+                test_task_id = f"test_unifically_sora_{int(time.time())}"
+
+                try:
+
+                    result = await generate_sora_video(
+                        session=http_session,
+                        params=test_params,
+                        task_id=test_task_id,
+                        s3_uploader=uploader,
+                        circuit_breaker=None
+                    )
+                    print(f"✅ SORA SUCCESS! Video URL: {result['video_url']}")
+
+                except SoraError as e:
+                    print(f"❌ SORA FAILED (API Error): {e}")
+                except Exception as e:
+                    print(f"❌ SORA FAILED (Unknown): {e}")
+
+
+
+    try:
+        asyncio.run(manual_sora_run())
+    except KeyboardInterrupt:
+        print("\n🛑 Тест остановлен вручную.")

@@ -3,39 +3,75 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-MSG_SAFETY = "Запрос отклонен системой безопасности (Safety/NSFW). Пожалуйста, избегайте тем 18+, насилия и т.д."
-MSG_TIMEOUT = "Генерация заняла слишком много времени. Попробуйте повторить запрос позже."
-MSG_OVERLOAD = "Серверы ИИ перегружены. Пожалуйста, попробуйте через пару минут."
+
+ERROR_RULES = [
+
+    (
+        ["photorealistic people", "real person", "human face"],
+        "⚠️ Данная модель запрещает загрузку изображений реальных людей (фотореализм). Пожалуйста, используйте сгенерированные или стилизованные лица."
+    ),
+
+
+    (
+        ["nudity", "sexuality", "erotic", "nsfw", "sexual"],
+        "🔞 Запрос отклонен фильтром безопасности (темы 18+, нагота). Пожалуйста, измените промпт или изображение."
+    ),
+
+
+    (
+        ["cameo", "celebrity", "public figure", "famous"],
+        "🚫 Запрещено упоминание конкретных личностей или знаменитостей, у которых нет разрешения (Cameo)."
+    ),
+
+
+    (
+        ["third-party", "copyright", "intellectual property"],
+        "©️ Запрос отклонен из-за сходства с защищенным авторским контентом."
+    ),
+
+
+    (
+        ["upload image violation", "image_moderation"],
+        "🖼️ Загруженное изображение не прошло проверку безопасности нейросети. Попробуйте другое фото."
+    ),
+
+
+    (
+        ["content policies", "guardrails", "moderation", "safety", "censorship", "policy violation"],
+        "🛡️ Запрос отклонен системой безопасности (Safety Guardrails). Попробуйте переформулировать запрос, сделав его более нейтральным."
+    ),
+
+
+    (
+        ["timeout", "timed out"],
+        "⏳ Время генерации истекло. Сервис перегружен, попробуйте позже."
+    ),
+
+
+    (
+        ["500", "502", "503", "504", "429", "connection error", "connector"],
+        "🔌 Серверы нейросети перегружены или недоступны. Пожалуйста, попробуйте через пару минут."
+    )
+]
+
 MSG_UNKNOWN = "Произошла техническая ошибка. Мы уже разбираемся. Попробуйте изменить параметры."
 
 
 def get_user_friendly_error(error: Exception) -> str:
     """
-    Превращает страшную техническую ошибку в понятный текст для юзера.
+    Превращает техническую ошибку провайдера в понятный текст на русском.
     """
+
     error_str = str(error).lower()
 
 
-    if any(x in error_str for x in ["safety", "policy", "nsfw", "content_policy_violation", "censorship"]):
-        return MSG_SAFETY
+    for keywords, user_message in ERROR_RULES:
 
+        if any(key in error_str for key in keywords):
+            return user_message
 
     if "400" in error_str:
+        return "Некорректные параметры запроса. Возможно, ошибка в промпте или настройках."
 
-        if any(x in error_str for x in ["sexual", "violence", "hate", "harassment"]):
-            return MSG_SAFETY
-        return "Некорректные параметры запроса. Попробуйте изменить промпт."
-
-
-    if "timeout" in error_str or "timed out" in error_str:
-        return MSG_TIMEOUT
-
-
-    if any(x in error_str for x in ["500", "502", "503", "504", "429", "limit"]):
-        return MSG_OVERLOAD
-
-
-    if "connection" in error_str or "connector" in error_str:
-        return MSG_OVERLOAD
 
     return MSG_UNKNOWN

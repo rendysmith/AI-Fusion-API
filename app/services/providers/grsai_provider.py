@@ -114,6 +114,16 @@ async def _poll_result(session: aiohttp.ClientSession, task_id: str, model_type:
         elif status == "failed":
             reason = result_data.get("failure_reason")
             error_msg = result_data.get("error", "Unknown error")
+
+            error_lower = error_msg.lower()
+
+            user_fault_keywords = ["violation", "moderation", "sensitive", "safety", "policy"]
+
+            if any(word in error_lower for word in user_fault_keywords):
+
+                logger.warning(f"GrsAI Moderation Error: {error_msg}")
+                raise GrsaiError(f"Ошибка API (400): Content Violation: {error_msg}")
+
             raise GrsaiError(f"Generation failed. Reason: {reason}. Detail: {error_msg}")
 
 
