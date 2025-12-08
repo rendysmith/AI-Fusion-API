@@ -1,3 +1,6 @@
+from datetime import date
+from typing import Optional
+
 from fastapi import APIRouter, Depends, Query
 from app import schemas
 from app.dependencies import get_current_admin_user, get_billing_repository
@@ -11,17 +14,22 @@ admin_router = APIRouter(
 )
 
 
-@admin_router.get(
-    "/payments",
-    response_model=schemas.AdminPaymentListResponse,
-    summary="[Admin] Get list of all payments"
-)
+@admin_router.get("/payments", response_model=schemas.AdminPaymentListResponse)
 async def get_all_payments(
         page: int = Query(1, ge=1),
         limit: int = Query(50, ge=1, le=100),
+        date_from: Optional[date] = Query(None),
+        date_to: Optional[date] = Query(None),
+        status: Optional[str] = Query(None),
+        provider: Optional[str] = Query(None),
+        search: Optional[str] = Query(None, description="Email or User ID"),
+
         billing_repo: BillingRepository = Depends(get_billing_repository)
 ):
-    payments, total = await billing_repo.get_all_payments_paginated(page, limit)
+    payments, total = await billing_repo.get_all_payments_paginated(
+        page, limit,
+        date_from, date_to, status, provider, search
+    )
 
 
     items = []
@@ -36,9 +44,7 @@ async def get_all_payments(
         items.append(schemas.AdminPaymentItem(
             internal_id=p.internal_id,
             amount=real_amount,
-
             currency=curr,
-
             status=p.status,
             provider=p.provider,
             created_at=p.created_at,

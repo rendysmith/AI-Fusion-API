@@ -1,8 +1,7 @@
 import logging
-from typing import Optional
-
 import aiohttp
 import json
+from typing import Optional
 from app.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -21,9 +20,9 @@ async def send_error_alert(
         error: Exception,
         traceback_str: str,
         duration: float,
-        primary_error: Optional[Exception] = None
+        primary_error: Optional[Exception] = None,
+        custom_title: Optional[str] = None
 ):
-
     if not settings.BOT_TOKEN or not settings.ADMIN_TELEGRAM_ID:
         return
 
@@ -33,7 +32,6 @@ async def send_error_alert(
     model = task_data.get("model", "unknown")
     user_id = task_data.get("user_id", "unknown")
     cost = task_data.get("cost", 0.0)
-
 
     params = task_data.get("params", {})
     params_str = json.dumps(params, indent=2, ensure_ascii=False)
@@ -45,22 +43,25 @@ async def send_error_alert(
     if primary_error:
         primary_error_text = f"⚠️ <b>Primary Failed:</b> {str(primary_error)[:200]}\n"
 
+
+    title = custom_title if custom_title else "🚨 <b>WORKER CRITICAL ERROR</b>"
+
     header = (
-        f"🚨 <b>WORKER CRITICAL ERROR</b>\n\n"
+        f"{title}\n\n"
         f"🆔 <b>Task:</b> <code>{task_id}</code>\n"
         f"👤 <b>User:</b> <code>{user_id}</code>\n"
         f"🤖 <b>Model:</b> {model}\n"
         f"💰 <b>Cost:</b> {cost}\n"
         f"⏱ <b>Duration:</b> {duration:.2f}s\n"
         f"{primary_error_text}"
-        f"❌ <b>Error:</b> {str(error)[:200]}\n"
+        f"❌ <b>Error:</b> {str(error)[:300]}\n"
     )
 
     reserved_len = len(header) + len(params_str) + 100
     available_for_tb = MAX_MESSAGE_LENGTH - reserved_len
 
     if available_for_tb < 500:
-        params_str = "(Params too long to display)"
+        params_str = "(Params too long)"
         available_for_tb = MAX_MESSAGE_LENGTH - len(header) - 100
 
     tb_formatted = _truncate_text(traceback_str, available_for_tb)

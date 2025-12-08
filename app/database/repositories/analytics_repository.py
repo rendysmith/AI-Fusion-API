@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List, Tuple
 
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, or_, cast, String
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.database.analytics_models import DailySystemStats, UserModelStats, CompletedTaskLog
@@ -289,12 +289,15 @@ class AnalyticsRepository:
             page: int,
             limit: int,
             date_from: Optional[date] = None,
-            date_to: Optional[date] = None
+            date_to: Optional[date] = None,
+            search_query: Optional[str] = None,
+            utm_source: Optional[str] = None,
+            utm_term: Optional[str] = None,
+            user_status: Optional[str] = 'all'
     ) -> Tuple[List[Visitor], int]:
 
         offset = (page - 1) * limit
         async with self.session_factory() as session:
-
             stmt = select(Visitor).order_by(desc(Visitor.first_visit_at))
 
 
@@ -304,9 +307,33 @@ class AnalyticsRepository:
                 stmt = stmt.where(Visitor.first_visit_at.between(start_dt, end_dt))
 
 
+            if utm_source:
+                stmt = stmt.where(Visitor.utm_source == utm_source)
+
+
+            if utm_term:
+                stmt = stmt.where(Visitor.utm_term.ilike(f"%{utm_term}%"))
+
+
+            if user_status == 'client':
+                stmt = stmt.where(Visitor.user_id.isnot(None))
+            elif user_status == 'guest':
+                stmt = stmt.where(Visitor.user_id.is_(None))
+
+
+            if search_query:
+                search_pattern = f"%{search_query}%"
+
+                stmt = stmt.where(
+                    or_(
+                        cast(Visitor.visitor_id, String).ilike(search_pattern),
+                        Visitor.referrer.ilike(search_pattern)
+                    )
+                )
+
+
             count_stmt = select(func.count()).select_from(stmt.subquery())
             total = await session.scalar(count_stmt) or 0
-
 
             stmt = stmt.limit(limit).offset(offset)
             result = await session.execute(stmt)

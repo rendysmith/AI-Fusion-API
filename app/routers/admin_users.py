@@ -160,15 +160,15 @@ async def add_bulk_credits(
 
 
 @admin_router.get(
-    "/{user_id}",
+    "/{identifier}",
     response_model=schemas.AdminUserFullDetailResponse,
     summary="[Admin] Get full detailed profile of a user"
 )
 async def get_user_detail_admin(
-        user_id: int,
+        identifier: str,
         user_repo: UserRepository = Depends(get_user_repository)
 ):
-    data = await user_repo.get_user_full_details(user_id)
+    data = await user_repo.get_user_full_details(identifier)
 
     if not data:
         raise HTTPException(status_code=404, detail="User not found")

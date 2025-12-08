@@ -243,21 +243,32 @@ class UserRepository(BaseRepository):
             await session.commit()
             return True
 
-    async def get_user_full_details(self, user_id: int) -> dict:
+    async def get_user_full_details(self, identifier: str) -> dict:
+
         async with self.session_factory() as session:
 
-            stmt_user = (
-                select(User)
-                .where(User.id == user_id)
-                .options(
-                    selectinload(User.subscription).joinedload(UserSubscription.plan)
-                )
+
+            stmt_user = select(User).options(
+                selectinload(User.subscription).joinedload(UserSubscription.plan)
             )
+
+
+            if identifier.isdigit():
+
+                stmt_user = stmt_user.where(User.id == int(identifier))
+            else:
+
+                stmt_user = stmt_user.where(User.firebase_uid == identifier)
+
             user = (await session.execute(stmt_user)).scalars().first()
+
             if not user:
                 return None
 
-            stmt_visitor = select(Visitor).where(Visitor.user_id == user_id)
+            real_user_id = user.id
+
+
+            stmt_visitor = select(Visitor).where(Visitor.user_id == real_user_id)
             visitor = (await session.execute(stmt_visitor)).scalars().first()
 
 
@@ -265,17 +276,16 @@ class UserRepository(BaseRepository):
                 func.count(GenerationTask.id).label("total"),
                 func.count(GenerationTask.id).filter(GenerationTask.status == 'completed').label("success"),
                 func.sum(GenerationTask.cost).label("spent")
-            ).where(GenerationTask.user_id == user_id)
+            ).where(GenerationTask.user_id == real_user_id)
 
             task_stats = (await session.execute(stmt_tasks)).one()
 
 
             stmt_money = select(func.sum(PaymentInvoice.amount)).where(
-                PaymentInvoice.user_id == user_id,
+                PaymentInvoice.user_id == real_user_id,
                 PaymentInvoice.status == 'paid'
             )
             money_spent = (await session.scalar(stmt_money)) or 0
-
 
             return {
                 "user": user,

@@ -1,11 +1,14 @@
 import uuid
-from sqlalchemy import select, update, Row, RowMapping, func, desc
+from datetime import datetime, timezone, date
+
+from sqlalchemy import select, update, Row, RowMapping, func, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from typing import List, Optional, Any, Coroutine, Sequence, Tuple
 
 from sqlalchemy.orm import selectinload
 
 from app.database.billing_models import Product, Payment, PaymentInvoice
+from app.database.main_models import User
 
 
 class BillingRepository:
@@ -100,12 +103,17 @@ class BillingRepository:
     async def get_all_payments_paginated(
             self,
             page: int,
-            limit: int
+            limit: int,
+            date_from: Optional[date] = None,
+            date_to: Optional[date] = None,
+            status: Optional[str] = None,
+            provider: Optional[str] = None,
+            search_query: Optional[str] = None
     ) -> Tuple[List[Payment], int]:
+
         offset = (page - 1) * limit
 
         async with self.session_factory() as session:
-
             stmt = (
                 select(Payment)
                 .options(
@@ -113,14 +121,36 @@ class BillingRepository:
                     selectinload(Payment.product)
                 )
                 .order_by(desc(Payment.created_at))
-                .limit(limit)
-                .offset(offset)
             )
 
+            if date_from and date_to:
+                start_dt = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
+                end_dt = datetime.combine(date_to, datetime.max.time(), tzinfo=timezone.utc)
+                stmt = stmt.where(Payment.created_at.between(start_dt, end_dt))
+
+            if status:
+                stmt = stmt.where(Payment.status == status)
+            if provider:
+                stmt = stmt.where(Payment.provider == provider)
+
+
+            if search_query:
+
+                stmt = stmt.join(Payment.user)
+
+                search_pattern = f"%{search_query}%"
+                stmt = stmt.where(
+                    or_(
+                        User.email.ilike(search_pattern),
+                        (User.id == int(search_query)) if search_query.isdigit() else False
+                    )
+                )
+
+
+            count_query = select(func.count()).select_from(stmt.subquery())
+            total = await session.scalar(count_query) or 0
+
+            stmt = stmt.limit(limit).offset(offset)
+
             result = await session.execute(stmt)
-            payments = result.scalars().all()
-
-            count_stmt = select(func.count(Payment.internal_id))
-            total = await session.scalar(count_stmt) or 0
-
-            return payments, total
+            return result.scalars().all(), total

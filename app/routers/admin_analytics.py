@@ -131,22 +131,28 @@ async def get_traffic_sources_report(
     )
 
 
-@admin_router.get(
-    "/raw-visits",
-    response_model=VisitorLogResponse,
-    summary="[Admin] Get raw log of ALL visitors (registered + guests)"
-)
+@admin_router.get("/raw-visits", response_model=VisitorLogResponse)
 async def get_raw_visits_log(
         page: int = Query(1, ge=1),
-        limit: int = Query(50, ge=1, le=100),
+        limit: int = Query(50, ge=1),
         date_from: Optional[date] = Query(None),
         date_to: Optional[date] = Query(None),
+        search: Optional[str] = Query(None, description="Search by visitor_id or referrer"),
+        utm_source: Optional[str] = Query(None),
+        utm_term: Optional[str] = Query(None),
+        user_status: Optional[str] = Query('all', enum=['all', 'client', 'guest']),
+
         analytics_repo: AnalyticsRepository = Depends(get_analytics_repository)
 ):
-    visitors, total = await analytics_repo.get_raw_visitors_log(page, limit, date_from, date_to)
+    visitors, total = await analytics_repo.get_raw_visitors_log(
+        page, limit, date_from, date_to,
+        search_query=search,
+        utm_source=utm_source,
+        utm_term=utm_term,
+        user_status=user_status
+    )
 
     mapped_items = [VisitorLogItem.model_validate(v) for v in visitors]
-
 
     return VisitorLogResponse(
         items=mapped_items,

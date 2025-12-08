@@ -101,14 +101,26 @@ async def process_task(session: aiohttp.ClientSession,
             except Exception as error:
 
                 primary_exception = error
-
                 error_str = str(error)
 
+
                 if "400" in error_str:
-                    logger.error(f"TaskID: {task_id} | Ошибка 400 (Bad Request). Fallback ОТМЕНЕН. Ошибка: {error}")
+                    logger.error(f"TaskID: {task_id} | Ошибка 400. Fallback ОТМЕНЕН.")
                     raise error
 
-                logger.warning(f"TaskID: {task_id} | Primary Provider упал ({error}). Пробую Fallback...")
+                logger.warning(f"TaskID: {task_id} | Primary упал ({error}). Пробую Fallback...")
+
+
+                current_tb = traceback.format_exc()
+                asyncio.create_task(
+                    send_error_alert(
+                        task_data=task_data,
+                        error=error,
+                        traceback_str=current_tb,
+                        duration=time.time() - start_time,
+                        custom_title="⚡️ <b>CIRCUIT BREAKER TRIPPED</b>"
+                    )
+                )
 
                 fallback_processor = MODEL_PROCESSORS_FALLBACK.get(model_name)
                 if not fallback_processor:
