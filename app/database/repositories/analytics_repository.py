@@ -292,6 +292,7 @@ class AnalyticsRepository:
             date_to: Optional[date] = None,
             search_query: Optional[str] = None,
             utm_source: Optional[str] = None,
+            utm_medium: Optional[str] = None,
             utm_term: Optional[str] = None,
             user_status: Optional[str] = 'all'
     ) -> Tuple[List[Visitor], int]:
@@ -310,6 +311,8 @@ class AnalyticsRepository:
             if utm_source:
                 stmt = stmt.where(Visitor.utm_source == utm_source)
 
+            if utm_medium:
+                stmt = stmt.where(Visitor.utm_medium == utm_medium)
 
             if utm_term:
                 stmt = stmt.where(Visitor.utm_term.ilike(f"%{utm_term}%"))

@@ -16,6 +16,7 @@ from app.database.repositories.analytics_repository import AnalyticsRepository
 from app.database.repositories.circuit_breaker_repository import CircuitBreakerRepository
 from app.database.repositories.task_repository import TaskRepository
 from app.database.repositories.user_repository import UserRepository
+from app.exceptions import FatalProviderError, UserValidationError
 from app.services.providers import kie_ai_provider, openai_provider, unifically_provider, grsai_provider
 from app.services.s3_uploader import S3UploaderService
 from app.services.telegram_notifier import send_error_alert
@@ -72,66 +73,33 @@ async def process_task(session: aiohttp.ClientSession,
         is_circuit_open = await circuit_breaker.is_open(model_name)
 
         if is_circuit_open:
-            logger.warning(f"TaskID: {task_id} | Цепь разорвана. Использую Fallback (OpenAI).")
-            processor = MODEL_PROCESSORS_FALLBACK.get(model_name)
+            reason = await circuit_breaker.get_last_error(model_name)
+            logger.warning(f"TaskID: {task_id} | ⛔️ Цепь разорвана ({reason}). Сразу Fallback.")
+
+            try:
+                fallback_result = await _run_fallback(session, task_data, s3_uploader)
+                await task_repo.complete_task(task_id, fallback_result)
+                logger.info(f"TaskID: {task_id} | Задача выполнена через Fallback (цепь разорвана).")
+
+            except Exception as e:
+                logger.error(f"TaskID: {task_id} | Fallback failed while circuit open: {e}")
+                await task_repo.fail_task(task_id, "Сервис недоступен")
+                await refund_on_failure(task_data, user_repo)
+
+            return
+
+        else:
+            processor = MODEL_PROCESSORS_PRIMARY.get(model_name)
+
             if not processor:
-                raise ValueError(f"Не найден Fallback-обработчик для {model_name}")
+                raise FatalProviderError(f"No processor found for {model_name}")
 
             result_data = await processor(
                 session=session,
                 params=params,
                 task_id=task_id,
-                s3_uploader=s3_uploader
+                s3_uploader=s3_uploader,
             )
-
-        else:
-            processor = MODEL_PROCESSORS_PRIMARY.get(model_name)
-            if not processor:
-                raise ValueError(f"Не найден Primary-обработчик для {model_name}")
-
-            try:
-                result_data = await processor(
-                    session=session,
-                    params=params,
-                    task_id=task_id,
-                    s3_uploader=s3_uploader,
-                    circuit_breaker=circuit_breaker,
-                    model_name=model_name
-                )
-            except Exception as error:
-
-                primary_exception = error
-                error_str = str(error)
-
-
-                if "400" in error_str:
-                    logger.error(f"TaskID: {task_id} | Ошибка 400. Fallback ОТМЕНЕН.")
-                    raise error
-
-                logger.warning(f"TaskID: {task_id} | Primary упал ({error}). Пробую Fallback...")
-
-
-                current_tb = traceback.format_exc()
-                asyncio.create_task(
-                    send_error_alert(
-                        task_data=task_data,
-                        error=error,
-                        traceback_str=current_tb,
-                        duration=time.time() - start_time,
-                        custom_title="⚡️ <b>CIRCUIT BREAKER TRIPPED</b>"
-                    )
-                )
-
-                fallback_processor = MODEL_PROCESSORS_FALLBACK.get(model_name)
-                if not fallback_processor:
-                    raise ValueError(f"Primary Provider упал, но Fallback-обработчик не найден!")
-
-                result_data = await fallback_processor(
-                    session=session,
-                    params=params,
-                    task_id=task_id,
-                    s3_uploader=s3_uploader
-                )
 
         await task_repo.complete_task(task_id, result_data)
         logger.info(f"TaskID: {task_id} | Задача успешно завершена.")
@@ -159,41 +127,61 @@ async def process_task(session: aiohttp.ClientSession,
         except Exception as analytics_e:
             logger.error(f"TaskID: {task_id} | ОШИБКА ЗАПИСИ В АНАЛИТИКУ: {analytics_e}", exc_info=True)
 
-    except Exception as e:
 
-        duration = time.time() - start_time
-
-        error_str = str(e).lower()
-        is_user_error = any(marker in error_str for marker in [
-            "400",
-            "violation",
-            "content policy",
-            "safety",
-            "moderation",
-            "nsfw",
-            "censorship"
-        ])
-
-        if is_user_error:
-            logger.warning(f"TaskID: {task_id} | Task Failed (User Error): {e}")
-
-        else:
-            logger.error(f"TaskID: {task_id} | CRITICAL ERROR: {e}", exc_info=True)
-
-            full_traceback = traceback.format_exc()
-            asyncio.create_task(
-                send_error_alert(
-                    task_data=task_data,
-                    error=e,
-                    traceback_str=full_traceback,
-                    duration=duration,
-                    primary_error=primary_exception
-                )
-            )
+    except UserValidationError as e:
+        logger.warning(f"TaskID: {task_id} | 👮 User Fault: {e}")
 
         friendly_error = get_user_friendly_error(e)
         await task_repo.fail_task(task_id, friendly_error)
         await refund_on_failure(task_data, user_repo)
+
+    except FatalProviderError as e:
+        logger.error(f"TaskID: {task_id} | 💥 Provider Crash: {e}")
+
+        current_tb = traceback.format_exc()
+        asyncio.create_task(send_error_alert(task_data, e, current_tb, time.time() - start_time))
+
+        await circuit_breaker.trip(model_name, error_msg=str(e))
+
+
+        logger.info(f"TaskID: {task_id} | Пробую Fallback после краша...")
+
+        try:
+            fallback_result = await _run_fallback(session, task_data, s3_uploader)
+            await task_repo.complete_task(task_id, fallback_result)
+            logger.info(f"TaskID: {task_id} | Задача спасена через Fallback.")
+
+        except Exception as fb_error:
+            logger.critical(f"TaskID: {task_id} | Fallback тоже упал: {fb_error}")
+            await task_repo.fail_task(task_id, "Сервис временно недоступен. Попробуйте позже.")
+            await refund_on_failure(task_data, user_repo)
+
+    except Exception as e:
+
+        logger.critical(f"TaskID: {task_id} | ☠️ Critical Worker Error: {e}", exc_info=True)
+        await task_repo.fail_task(task_id, "Внутренняя ошибка сервиса")
+        await refund_on_failure(task_data, user_repo)
+
+
+async def _run_fallback(session, task_data, s3_uploader):
+
+    task_id = task_data["_id"]
+    model_name = task_data["model"]
+    params = task_data.get("params", {})
+
+    fallback_processor = MODEL_PROCESSORS_FALLBACK.get(model_name)
+    if not fallback_processor:
+        raise FatalProviderError(f"No fallback processor for {model_name}")
+
+
+    result_data = await fallback_processor(
+        session=session,
+        params=params,
+        task_id=task_id,
+        s3_uploader=s3_uploader
+    )
+
+    return result_data
 
 
 async def refund_on_failure(task: dict, user_repo: UserRepository):

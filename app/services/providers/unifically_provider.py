@@ -5,6 +5,7 @@ from typing import Final, Optional
 
 import aiohttp
 
+from app.exceptions import UserValidationError, FatalProviderError
 from app.settings import settings
 from app.services.s3_uploader import S3UploaderService, S3UploadServiceError
 from app.database.repositories.circuit_breaker_repository import CircuitBreakerRepository
@@ -66,18 +67,14 @@ async def _start_sora_task(session: aiohttp.ClientSession,
                 if resp.status == 400:
                     try:
                         error_data = await resp.json()
-
-                        logging.error(error_data)
-
-                        error_message = error_data.get('data', {}).get('error', {}).get(
-                            'message', 'API вернул 400 без сообщения об ошибке'
-                        )
-                    except Exception:
+                        error_message = error_data.get('data', {}).get('error', {}).get('message', str(error_data))
+                    except:
                         error_message = await resp.text()
 
-                    logging.error(f"SORA: Ошибка старта задачи (400): {error_message}")
+                    raise UserValidationError(f"Unifically 400: {error_message}")
 
-                    raise SoraError(f"Ошибка API (400): {error_message}")
+                if resp.status >= 500:
+                    raise FatalProviderError(f"Unifically Server Error: {resp.status}")
 
                 resp.raise_for_status()
                 response_data = await resp.json()
@@ -99,16 +96,18 @@ async def _start_sora_task(session: aiohttp.ClientSession,
                 await asyncio.sleep(SORA_POST_RETRY_DELAY)
                 continue
 
-            raise
+            raise FatalProviderError(f"Unifically Network Error: {e}")
 
-        except SoraError:
+
+        except UserValidationError:
+
             raise
 
         except Exception as e:
-            logging.error(f"SORA: Неожиданная ошибка при запросе task_id: {e}", exc_info=True)
-            raise SoraError(f"SORA: Произошла неожиданная ошибка: {e}") from e
 
-    raise SoraError(f"SORA: Не удалось получить task_id от API после {SORA_POST_MAX_RETRIES} попыток.")
+            raise FatalProviderError(f"Unifically Unexpected Error: {e}")
+
+    raise FatalProviderError(f"Unifically failed to start task after retries")
 
 
 async def _poll_sora_result(session: aiohttp.ClientSession, api_task_id: str) -> str:
@@ -132,8 +131,9 @@ async def _poll_sora_result(session: aiohttp.ClientSession, api_task_id: str) ->
                         )
                     except Exception:
                         error_message = await resp.text()
+
                     logging.error(f"SORA: API вернул ошибку 400 для task {api_task_id}: {error_message}")
-                    raise SoraError(f"Ошибка API (400): {error_message}")
+                    raise UserValidationError(f"Unifically Poll 400: {error_message}")
 
                 if resp.status in [500, 502, 503, 504, 524]:
                     logging.warning(
@@ -153,8 +153,12 @@ async def _poll_sora_result(session: aiohttp.ClientSession, api_task_id: str) ->
 
                 if status == 'failed':
                     error_info = data_block.get('error', {})
-                    error_message = error_info.get('message', 'Задача провалилась без сообщения')
-                    raise SoraError(f"SORA: Задача {api_task_id} 'failed'. Причина: {error_message}")
+                    error_message = error_info.get('message', 'Unknown').lower()
+
+                    if any(x in error_message for x in ['nsfw', 'policy', 'safety', 'moderation']):
+                        raise UserValidationError(f"Unifically Safety: {error_message}")
+
+                    raise FatalProviderError(f"Unifically Task Failed: {error_message}")
 
                 if status == 'completed':
                     output = data_block.get('output', {})
@@ -168,22 +172,21 @@ async def _poll_sora_result(session: aiohttp.ClientSession, api_task_id: str) ->
                 logging.info(f"SORA: Task {api_task_id} еще в процессе (статус: {status}). Ожидаем...")
                 await asyncio.sleep(SORA_POLLING_INTERVAL)
 
-        except aiohttp.ClientResponseError:
+
+        except (UserValidationError, FatalProviderError):
             raise
-        except SoraError:
-            raise
+
         except Exception as e:
             logging.error(f"SORA: Неожиданная ошибка при опросе task {api_task_id}: {e}", exc_info=True)
             await asyncio.sleep(SORA_POLLING_INTERVAL)
 
-    raise SoraError(f"SORA: Таймаут опроса ({SORA_POLLING_TIMEOUT} сек) для task_id: {api_task_id}")
+    raise FatalProviderError(f"Unifically Polling Timeout ({SORA_POLLING_TIMEOUT}s)")
 
 
 async def generate_sora_video(session: aiohttp.ClientSession,
                               params: dict,
                               task_id: str,
                               s3_uploader: S3UploaderService,
-                              circuit_breaker: Optional[CircuitBreakerRepository] = None,
                               model_name: str = "sora-2",
                               **kwargs) -> dict:
     logging.info(f"InternalTaskID: {task_id} | Вызов generate_sora_video с параметрами: {params}")
@@ -223,41 +226,11 @@ async def generate_sora_video(session: aiohttp.ClientSession,
 
         return {'video_url': permanent_url}
 
-    except Exception as e:
-
-        # Если ошибка S3 - не рвем цепь, не фоллбечим (видео-то сгенерировалось)
-        if isinstance(e, S3UploadServiceError):
-            logging.error(f"TaskID: {task_id} | Ошибка S3, но Unifically жив. Fallback не нужен.")
-            raise
-
-        should_trip = False
-        status_code = None
-
-        if isinstance(e, aiohttp.ClientResponseError):
-            status_code = e.status
-        elif isinstance(e.__cause__, aiohttp.ClientResponseError):
-            status_code = e.__cause__.status
-
-        # Условия разрыва цепи:
-        # Серверные (5xx), Бан (429).
-        # ВАЖНО: 400 здесь НЕ вызовет should_trip=True, так как мы его отловили выше и выбросили как SoraError
-        if status_code and status_code in [500, 502, 503, 504, 429]:
-            should_trip = True
-
-        if isinstance(e, asyncio.TimeoutError) or isinstance(e.__cause__, asyncio.TimeoutError):
-            should_trip = True
-
-        if should_trip and circuit_breaker:
-            logging.error(
-                f"TaskID: {task_id} | Unifically считается 'упавшим' (Status: {status_code}). "
-                f"Разрываем цепь '{model_name}' и включаем Fallback на 5 минут."
-            )
-            await circuit_breaker.trip(model_name)
-        else:
-            logging.error(
-                f"TaskID: {task_id} | Ошибка Unifically: {e}. Fallback только для текущей задачи (если это не 400).")
-
+    except (UserValidationError, FatalProviderError):
         raise
+
+    except Exception as e:
+        raise FatalProviderError(f"Unifically Critical: {e}")
 
 
 if __name__ == "__main__":

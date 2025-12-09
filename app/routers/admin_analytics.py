@@ -139,6 +139,7 @@ async def get_raw_visits_log(
         date_to: Optional[date] = Query(None),
         search: Optional[str] = Query(None, description="Search by visitor_id or referrer"),
         utm_source: Optional[str] = Query(None),
+        utm_medium: Optional[str] = Query(None),
         utm_term: Optional[str] = Query(None),
         user_status: Optional[str] = Query('all', enum=['all', 'client', 'guest']),
 
@@ -148,6 +149,7 @@ async def get_raw_visits_log(
         page, limit, date_from, date_to,
         search_query=search,
         utm_source=utm_source,
+        utm_medium=utm_medium,
         utm_term=utm_term,
         user_status=user_status
     )

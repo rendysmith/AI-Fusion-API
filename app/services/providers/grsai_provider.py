@@ -5,6 +5,7 @@ from typing import Final, Optional
 
 import aiohttp
 
+from app.exceptions import FatalProviderError, UserValidationError
 from app.settings import settings
 from app.services.s3_uploader import S3UploaderService, S3UploadServiceError
 from app.database.repositories.circuit_breaker_repository import CircuitBreakerRepository
@@ -45,7 +46,6 @@ async def _make_request(
         url: str,
         payload: dict = None
 ) -> dict:
-    """Обёртка для запросов с базовой обработкой ошибок."""
     headers = {
         'Authorization': f'Bearer {settings.GRSAI_API_KEY}',
         'Content-Type': 'application/json'
@@ -55,19 +55,37 @@ async def _make_request(
         if method == "POST":
             async with session.post(url, json=payload, headers=headers, ssl=False) as resp:
                 resp_text = await resp.text()
+
+                if resp.status == 400:
+                    raise UserValidationError(f"GrsAI 400 Bad Request: {resp_text}")
+
+                if resp.status in [401, 403]:
+                    raise FatalProviderError(f"GrsAI Auth Error ({resp.status}): {resp_text}")
+
+                if resp.status >= 500:
+                    raise FatalProviderError(f"GrsAI Server Error ({resp.status}): {resp_text}")
+
                 if resp.status != 200:
-                    raise GrsaiError(f"Ошибка API ({resp.status}): {resp_text}")
+                    raise FatalProviderError(f"GrsAI Unknown Error ({resp.status}): {resp_text}")
+
                 return json.loads(resp_text)
+
         elif method == "GET":
 
             async with session.get(url, params=payload, headers=headers, ssl=False) as resp:
                 resp_text = await resp.text()
+
+                if resp.status == 400:
+                    raise UserValidationError(f"GrsAI 400 Bad Request: {resp_text}")
+                if resp.status >= 500:
+                    raise FatalProviderError(f"GrsAI Server Error ({resp.status}): {resp_text}")
+
                 if resp.status != 200:
-                    raise GrsaiError(f"Ошибка API ({resp.status}): {resp_text}")
+                    raise FatalProviderError(f"GrsAI Error ({resp.status}): {resp_text}")
                 return json.loads(resp_text)
 
     except aiohttp.ClientError as e:
-        raise GrsaiError(f"Сетевая ошибка: {e}") from e
+        raise FatalProviderError(f"GrsAI Network Error: {e}") from e
 
 
 
@@ -117,14 +135,12 @@ async def _poll_result(session: aiohttp.ClientSession, task_id: str, model_type:
 
             error_lower = error_msg.lower()
 
-            user_fault_keywords = ["violation", "moderation", "sensitive", "safety", "policy"]
-
+            user_fault_keywords = ["violation", "moderation", "sensitive", "safety", "policy", "nsfw"]
             if any(word in error_lower for word in user_fault_keywords):
+                raise UserValidationError(f"GrsAI Safety Policy: {error_msg}")
 
-                logger.warning(f"GrsAI Moderation Error: {error_msg}")
-                raise GrsaiError(f"Ошибка API (400): Content Violation: {error_msg}")
 
-            raise GrsaiError(f"Generation failed. Reason: {reason}. Detail: {error_msg}")
+            raise FatalProviderError(f"GrsAI Generation Failed: {reason} - {error_msg}")
 
 
         await asyncio.sleep(POLLING_INTERVAL)
@@ -136,7 +152,6 @@ async def generate_sora_grsai(
         params: dict,
         task_id: str,
         s3_uploader: S3UploaderService,
-        circuit_breaker: Optional[CircuitBreakerRepository] = None,
         model_name: str = "sora-2",
         **kwargs
 ) -> dict:
@@ -186,10 +201,11 @@ async def generate_sora_grsai(
 
         return {"video_url": final_url}
 
-    except Exception as e:
-
-        _handle_error(e, task_id, circuit_breaker, model_name)
+    except (UserValidationError, FatalProviderError):
         raise
+
+    except Exception as e:
+        raise FatalProviderError(f"GrsAI Unexpected Error: {e}") from e
 
 
 
@@ -198,7 +214,6 @@ async def generate_veo_grsai(
         params: dict,
         task_id: str,
         s3_uploader: S3UploaderService,
-        circuit_breaker: Optional[CircuitBreakerRepository] = None,
         model_name: str = "veo-3-fast",
         **kwargs
 ) -> dict:
@@ -244,25 +259,12 @@ async def generate_veo_grsai(
 
         return {"video_url": final_url}
 
-    except Exception as e:
-        _handle_error(e, task_id, circuit_breaker, model_name)
+
+    except (UserValidationError, FatalProviderError):
         raise
 
-
-
-def _handle_error(e, task_id, cb, model):
-    if isinstance(e, S3UploadServiceError):
-        return
-
-    if "Invalid input parameters" in str(e):
-        return
-
-
-    if cb:
-
-        asyncio.create_task(cb.trip(model))
-
-    logger.error(f"TaskID: {task_id} | Grsai Error: {e}")
+    except Exception as e:
+        raise FatalProviderError(f"GrsAI Unexpected Error: {e}") from e
 
 
 if __name__ == "__main__":
