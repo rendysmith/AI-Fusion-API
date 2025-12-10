@@ -2,7 +2,7 @@ import logging
 from decimal import Decimal
 from typing import Optional, Any, Sequence
 
-from sqlalchemy import update, func
+from sqlalchemy import update, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.future import select
@@ -15,6 +15,8 @@ from app.database.metric_models import Visitor
 from app.database.subscription_models import UserSubscription, SubscriptionPlan
 from app.database.main_models import User
 from app.database.task_models import GenerationTask
+
+from app.services.referral_service import HasherRef
 
 
 class BaseRepository:
@@ -243,6 +245,7 @@ class UserRepository(BaseRepository):
             await session.commit()
             return True
 
+<<<<<<< HEAD
     async def get_user_full_details(self, identifier: str) -> dict:
 
         async with self.session_factory() as session:
@@ -297,3 +300,70 @@ class UserRepository(BaseRepository):
                     "total_money_paid": money_spent
                 }
             }
+=======
+    async def register_user(self, payload: schemas.UserRegisterRequest) -> User:
+        """
+        Создает нового пользователя с проверкой реферального кода.
+        Если пользователь уже есть - возвращает ошибку (или существующего).
+        """
+        async with self.session_factory() as session:
+            # 1. Проверяем, существует ли пользователь
+            stmt = select(User).where(
+                or_(
+                    User.firebase_uid == payload.firebase_uid,
+                    User.email == payload.email
+                )
+            )
+            existing_user = (await session.execute(stmt)).scalars().first()
+
+            if existing_user:
+                # Вариант А: Выбрасываем исключение (рекомендуется для регистрации)
+                raise ValueError("User already exists")
+                # Вариант Б: Возвращаем существующего (но тогда без бонусов)
+                # return existing_user
+
+            # 2. Создаем объект (пока не добавляем в сессию)
+            new_user = User(
+                firebase_uid=payload.firebase_uid,
+                email=payload.email,
+                username=payload.username,
+                photo_url=payload.photo_url,
+                registration_method='email',  # Или брать из payload
+                balance=0.0  # Начальный баланс
+            )
+
+            # 3. Логика реферальной системы
+            if payload.referral_code:
+                # Декодируем код
+                referrer_id = HasherRef.decode(payload.referral_code)
+
+                if referrer_id:
+                    # Ищем пригласившего
+                    ref_stmt = select(User).where(User.id == referrer_id)
+                    referrer = (await session.execute(ref_stmt)).scalars().first()
+
+                    # Проверяем условия: реферер есть и не заблокирован
+                    if referrer and not referrer.is_blocked:
+                        # А. Связываем (кто пригласил нового юзера)
+                        new_user.referred_by_id = referrer.id
+
+                        # Б. Начисляем 100 кредитов пригласившему
+                        # Используем выражение SQL для атомарности (User.balance + 100)
+                        referrer.balance = User.balance + 100
+
+                        # Явно добавляем реферера в сессию для обновления
+                        session.add(referrer)
+
+            # 4. Сохраняем нового пользователя
+            session.add(new_user)
+
+            try:
+                await session.commit()
+                # Refresh нужен, чтобы получить сгенерированный ID и created_at
+                await session.refresh(new_user)
+            except IntegrityError:
+                await session.rollback()
+                raise ValueError("Database error during registration")
+
+            return new_user
+>>>>>>> 53cd50a (fix: get_text2text)

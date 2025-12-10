@@ -22,6 +22,17 @@ class AiModelRepository:
             result = await session.execute(stmt)
             return result.scalars().first()
 
+    async def get_by_proveder_all(self, description: str) -> Optional[AiModel]:
+        async with self.session_factory() as session:
+            stmt = (
+                select(AiModel)
+                .where(AiModel.description == description)
+                .order_by(asc(AiModel.sort_order))  # Сортировка по sort_order по возрастанию
+                # Если нужно по убыванию, используйте desc(AiModel.sort_order)
+            )
+            result = await session.execute(stmt)
+            return result.scalars().all()
+
     async def get_by_name(self, name: str) -> Optional[AiModel]:
         async with self.session_factory() as session:
             stmt = select(AiModel).where(AiModel.name == name)

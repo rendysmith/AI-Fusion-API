@@ -35,3 +35,4 @@ alembic
 psycopg2-binary
 openai
 litellm
+hashids

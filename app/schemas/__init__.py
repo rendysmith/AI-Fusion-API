@@ -28,6 +28,11 @@ from .analytics import (
     UserAnalyticsResponse
 )
 
+from .referral import (
+    UserRegisterRequest,
+    UserResponse
+)
+
 
 from .auth import (
     TelegramInitRequest,

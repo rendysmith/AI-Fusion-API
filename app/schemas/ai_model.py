@@ -103,4 +103,4 @@ class AiModelResponse(AiModelBase):
 
 class ModelT2T(BaseModel):
     prompt: str
-    provider: str
+    model: str
