@@ -135,7 +135,15 @@ async def _poll_result(session: aiohttp.ClientSession, task_id: str, model_type:
 
             error_lower = error_msg.lower()
 
-            user_fault_keywords = ["violation", "moderation", "sensitive", "safety", "policy", "nsfw"]
+            user_fault_keywords = [
+                "violation", "violate",
+                "moderation",
+                "sensitive",
+                "safety",
+                "policy", "policies",
+                "nsfw",
+                "filter"
+            ]
             if any(word in error_lower for word in user_fault_keywords):
                 raise UserValidationError(f"GrsAI Safety Policy: {error_msg}")
 
