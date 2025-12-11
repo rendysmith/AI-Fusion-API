@@ -98,7 +98,7 @@ class GenerationService:
         if self.user.balance >= final_cost:
             worker_should_delay = False
 
-        elif active_plan.has_unlimited:
+        elif active_plan.has_unlimited and "sora" in model_name:
             final_cost = 0.0
             worker_should_delay = True
 
