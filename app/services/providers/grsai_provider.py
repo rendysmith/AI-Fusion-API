@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 GRSAI_BASE_URL: Final[str] = "https://api.grsai.com"
 GRSAI_SORA_PATH: Final[str] = "/v1/video/sora-video"
 GRSAI_VEO_PATH: Final[str] = "/v1/video/veo"
+GRSAI_NANO_BANANA_PATH: Final[str] = "/v1/draw/nano-banana"
 GRSAI_RESULT_PATH: Final[str] = "/v1/draw/result"
 
 POLLING_INTERVAL: Final[int] = 20
@@ -123,6 +124,13 @@ async def _poll_result(session: aiohttp.ClientSession, task_id: str, model_type:
                 results = result_data.get("results", [])
                 if results and len(results) > 0:
                     return results[0].get("url")
+
+
+            elif model_type == 'nano_banana':
+                results = result_data.get("results", [])
+                if results and len(results) > 0:
+                    return results[0].get("url")
+
             elif model_type == 'veo':
 
                 return result_data.get("url")
@@ -251,6 +259,8 @@ async def generate_veo_grsai(
         url = f"{GRSAI_BASE_URL}{GRSAI_VEO_PATH}"
         resp_json = await _make_request(session, "POST", url, payload)
 
+        logging.info(resp_json)
+
         provider_task_id = resp_json.get("data", {}).get("id")
         if not provider_task_id:
             raise GrsaiError(f"No task ID in response: {resp_json}")
@@ -273,6 +283,104 @@ async def generate_veo_grsai(
 
     except Exception as e:
         raise FatalProviderError(f"GrsAI Unexpected Error: {e}") from e
+
+
+async def _generate_nano_base(
+        session: aiohttp.ClientSession,
+        params: dict,
+        task_id: str,
+        s3_uploader: S3UploaderService,
+        api_model_name: str,
+        extra_payload: dict = None
+) -> dict:
+    logger.info(f"TaskID: {task_id} | Grsai {api_model_name} Start")
+
+    prompt = params.get("prompt")
+    if not prompt:
+        raise UserValidationError("Prompt is required")
+
+    aspect_ratio = params.get("aspect_ratio", 'auto')
+
+    payload = {
+        "model": api_model_name,
+        "prompt": prompt,
+        "aspectRatio": aspect_ratio,
+        "webHook": "-1"
+    }
+
+    if params.get("image_url"):
+        payload["urls"] = [params.get("image_url")]
+
+
+    if extra_payload:
+        payload.update(extra_payload)
+
+    try:
+        url = f"{GRSAI_BASE_URL}{GRSAI_NANO_BANANA_PATH}"
+        resp_json = await _make_request(session, "POST", url, payload)
+
+        provider_task_id = resp_json.get("data", {}).get("id")
+        if not provider_task_id:
+            raise FatalProviderError(f"No task ID in response: {resp_json}")
+
+        logger.info(f"TaskID: {task_id} | Grsai Task ID: {provider_task_id}")
+
+        image_url = await _poll_result(session, provider_task_id, model_type='nano_banana')
+
+        final_url = await s3_uploader.download_and_upload_video(
+            session=session,
+            source_url=image_url,
+            task_id=task_id
+        )
+
+
+        return {"image_url": final_url}
+
+    except (UserValidationError, FatalProviderError):
+        raise
+    except Exception as e:
+        raise FatalProviderError(f"GrsAI {api_model_name} Unexpected Error: {e}") from e
+
+
+async def generate_nano_banana_grsai(
+        session: aiohttp.ClientSession,
+        params: dict,
+        task_id: str,
+        s3_uploader: S3UploaderService,
+        **kwargs
+) -> dict:
+    """
+    Функция для обычной Nano Banana
+    """
+    return await _generate_nano_base(
+        session=session,
+        params=params,
+        task_id=task_id,
+        s3_uploader=s3_uploader,
+        api_model_name="nano-banana"
+    )
+
+
+async def generate_nano_banana_pro_grsai(
+        session: aiohttp.ClientSession,
+        params: dict,
+        task_id: str,
+        s3_uploader: S3UploaderService,
+        **kwargs
+) -> dict:
+    """
+    Функция для Nano Banana PRO (поддерживает imageSize)
+    """
+    image_size = params.get("quality", "1K")
+
+    return await _generate_nano_base(
+        session=session,
+        params=params,
+        task_id=task_id,
+        s3_uploader=s3_uploader,
+        api_model_name="nano-banana-pro",
+        extra_payload={"imageSize": image_size}
+    )
 
 
 if __name__ == "__main__":

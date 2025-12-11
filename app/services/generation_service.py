@@ -92,6 +92,9 @@ class GenerationService:
         await self._validate_and_get_price(model_name)
         final_cost, prime_cost = await self._calculate_costs(processed_params)
 
+        if active_plan.has_unlimited:
+            final_cost = 0.0
+
 
         new_balance = await self._deduct_funds(final_cost)
 
