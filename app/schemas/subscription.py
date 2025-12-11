@@ -14,6 +14,7 @@ class AvailableModel(BaseModel):
 class SubscriptionUsage(BaseModel):
     today: int
     concurrent: int
+    is_unlimited: bool = False
 
 class SubscriptionDetailResponse(BaseModel):
     id: str

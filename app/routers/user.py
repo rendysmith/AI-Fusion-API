@@ -198,9 +198,12 @@ async def get_user_subscription(
     time_24_hours_ago = datetime.now(timezone.utc) - timedelta(days=1)
     today_count = await task_repo.get_tasks_count_since(user.id, time_24_hours_ago)
 
+    is_unlimited = plan.has_unlimited if plan else False
+
     usage = schemas.SubscriptionUsage(
         today=today_count,
-        concurrent=processing_count
+        concurrent=processing_count,
+        is_unlimited=is_unlimited
     )
 
     return schemas.UserSubscriptionDetailResponse(

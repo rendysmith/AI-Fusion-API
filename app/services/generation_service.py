@@ -90,28 +90,34 @@ class GenerationService:
         )
 
         await self._validate_and_get_price(model_name)
+
         final_cost, prime_cost = await self._calculate_costs(processed_params)
 
-        if active_plan.has_unlimited:
+        worker_should_delay = False
+
+        if self.user.balance >= final_cost:
+            worker_should_delay = False
+
+        elif active_plan.has_unlimited:
             final_cost = 0.0
+            worker_should_delay = True
 
-
-        new_balance = await self._deduct_funds(final_cost)
-
-        if new_balance is None:
-
+        else:
             error_payload = schemas.ErrorDetailInsufficientCredits(
                 balance=float(self.user.balance),
                 cost=final_cost,
                 model=model_name,
                 plan=active_plan.slug
             )
-
-
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 detail=error_payload.model_dump()
             )
+
+        new_balance = await self._deduct_funds(final_cost)
+
+        if new_balance is None:
+            raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Insufficient credits")
 
         task_id = str(uuid.uuid4())
         created_at = datetime.now(timezone.utc)
@@ -122,7 +128,7 @@ class GenerationService:
             final_cost=final_cost,
             prime_cost=prime_cost,
             created_at=created_at,
-            plan_is_unlimited=active_plan.has_unlimited,
+            plan_is_unlimited=worker_should_delay,
             delay_factor=active_plan.unlimited_delay_factor
         )
 
