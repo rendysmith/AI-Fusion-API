@@ -14,9 +14,11 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app import schemas
 from app.database.main_models import User
 from app.database.engine import async_session_factory
+from app.database.repositories.priority_model_repository import PriorityModelRepository
 from app.database.repositories.system_repository import SystemRepository
 from app.database.subscription_models import UserSubscription, SubscriptionPlan
 from app.services.firebase_service import verify_firebase_token
+from app.services.t2t_service import UniversalLLM
 from app.settings import settings
 
 from app.database.repositories.user_repository import UserRepository
@@ -286,3 +288,9 @@ async def get_current_admin_user(
 
 def get_visitor_repository() -> VisitorRepository:
     return VisitorRepository(async_session_factory)
+
+def get_chat_repository() -> PriorityModelRepository:
+    return PriorityModelRepository(async_session_factory)
+
+def get_llm_repository() -> UniversalLLM:
+    return UniversalLLM(async_session_factory)
