@@ -13,7 +13,6 @@ async def get_text2text(
     llm = UniversalLLM()
     result = await llm.get_response(
         model=payload.model,
-        prompt=payload.prompt,
-    )
+        prompt=payload.prompt)
 
     return {"result": result}

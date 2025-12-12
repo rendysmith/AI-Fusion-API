@@ -245,7 +245,6 @@ class UserRepository(BaseRepository):
             await session.commit()
             return True
 
-<<<<<<< HEAD
     async def get_user_full_details(self, identifier: str) -> dict:
 
         async with self.session_factory() as session:
@@ -300,7 +299,7 @@ class UserRepository(BaseRepository):
                     "total_money_paid": money_spent
                 }
             }
-=======
+
     async def register_user(self, payload: schemas.UserRegisterRequest) -> User:
         """
         Создает нового пользователя с проверкой реферального кода.
@@ -366,4 +365,3 @@ class UserRepository(BaseRepository):
                 raise ValueError("Database error during registration")
 
             return new_user
->>>>>>> 53cd50a (fix: get_text2text)

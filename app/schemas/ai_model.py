@@ -104,3 +104,16 @@ class AiModelResponse(AiModelBase):
 class ModelT2T(BaseModel):
     prompt: str
     model: str
+
+# Схема для создания сессии
+class ChatSessionCreate(BaseModel):
+    user_id: int
+    model_slug: str = Field(..., max_length=50)
+    chat_name: str = "Новый чат"
+
+# Схема для создания сообщения
+class ChatMessageCreate(BaseModel):
+    session_id: int
+    role: Literal['user', 'assistant', 'system'] # Ограничиваем возможные значения
+    message_text: str
+    token_count: int = 0

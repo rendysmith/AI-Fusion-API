@@ -118,7 +118,6 @@ class UniversalLLM:
             "Grsai": [settings.GRSAI_API_KEY, self.grsai]
         }
 
-
         pmr = PriorityModelRepository(async_session_factory)
         providers = await pmr.get_by_proveder_all(model_name)
 
