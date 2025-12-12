@@ -8,14 +8,11 @@ from app.database.main_models import User
 from app.database.repositories.priority_model_repository import PriorityModelRepository
 from app.dependencies import get_chat_repository, get_llm_repository
 from app.main import AUTH_DEPENDENCY
+from app.schemas.ai_model import ChatHistoryRequest
 from app.services.t2t_service import UniversalLLM
 from app.schemas import ModelT2T
 
 router = APIRouter(prefix="/ai-models", tags=["AI Models"])
-
-
-class ChatHistoryRequest:
-    pass
 
 
 @router.post("/get_history", response_model=List[ChatMessage])  # Предполагаем, что ChatMessage - это схема ответа
@@ -43,6 +40,7 @@ async def get_text2text(
 ):
 
     result = await repo.get_response(
+        user_id=user_id,
         model=payload.model,
         prompt=payload.prompt)
 
