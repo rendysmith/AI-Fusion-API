@@ -39,7 +39,9 @@ class PriorityModel(Base):
 
 
 class ChatSession(Base):
+    __abstract__ = True
     __tablename__ = "chat_sessions"
+
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
@@ -53,7 +55,9 @@ class ChatSession(Base):
 
 
 class ChatMessage(Base):
+    __abstract__ = True
     __tablename__ = "chat_messages"
+
 
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(Integer, ForeignKey('chat_sessions.id', ondelete='CASCADE'), nullable=False)

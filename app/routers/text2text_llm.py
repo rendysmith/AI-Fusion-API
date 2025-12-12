@@ -36,12 +36,13 @@ async def get_chat_history(
 @router.post("/get_text_to_text", status_code=status.HTTP_200_OK)
 async def get_text2text(
         payload: ModelT2T,
+        user: User = AUTH_DEPENDENCY,
         repo: UniversalLLM = Depends(get_llm_repository)
 ):
 
     result = await repo.get_response(
-        user_id=user_id,
-        model=payload.model,
+        user_id=user.id,
+        model_slug=payload.model,
         prompt=payload.prompt)
 
     return {"result": result}

@@ -17,6 +17,7 @@ from app.database.engine import async_session_factory
 from app.database.repositories.priority_model_repository import PriorityModelRepository
 from app.database.repositories.system_repository import SystemRepository
 from app.database.subscription_models import UserSubscription, SubscriptionPlan
+from app.services.auth_service import AuthService
 from app.services.firebase_service import verify_firebase_token
 from app.services.t2t_service import UniversalLLM
 from app.settings import settings
@@ -178,13 +179,17 @@ def get_getcourse_service(
     )
 
 
+def get_auth_service(
+    user_repo=Depends(get_user_repository),
+    plan_repo=Depends(get_subscription_plan_repository)
+) -> AuthService:
+    return AuthService(user_repo, plan_repo)
+
+
 async def get_current_user(
         token: str = Depends(oauth2_scheme),
-        user_repo: UserRepository = Depends(get_user_repository),
-        plan_repo: SubscriptionPlanRepository = Depends(get_subscription_plan_repository),
-        sub_repo: SubscriptionRepository = Depends(get_subscription_repository)
+        auth_service: AuthService = Depends(get_auth_service)
 ) -> User:
-
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -192,84 +197,34 @@ async def get_current_user(
     )
 
     try:
-
         decoded_token = await asyncio.to_thread(verify_firebase_token, token)
-
         firebase_uid = decoded_token.get("uid")
         email = decoded_token.get("email")
 
-        if firebase_uid is None:
+        if not firebase_uid:
             raise credentials_exception
 
+        is_email_verified = decoded_token.get("email_verified", False)
+        sign_in_provider = decoded_token.get("firebase", {}).get("sign_in_provider")
 
-        user = await user_repo.get_by_firebase_uid(uid=firebase_uid)
+        is_trusted_provider = (
+                is_email_verified or
+                sign_in_provider in ['google.com', 'apple.com']
+        )
 
-        if user:
-            return user
+        user = await auth_service.get_or_create_user(
+            firebase_uid=firebase_uid,
+            email=email,
+            is_trusted=is_trusted_provider
+        )
 
-
-        try:
-            async with user_repo.session_factory() as session:
-                async with session.begin():
-
-
-                    user_payload = schemas.UserProfileUpdateRequest()
-                    stmt_insert_user = pg_insert(User).values(
-                        firebase_uid=firebase_uid,
-                        email=email,
-                        **user_payload.model_dump(exclude_unset=True)
-                    ).on_conflict_do_nothing().returning(User)
-
-                    user = (await session.execute(stmt_insert_user)).scalar_one_or_none()
-
-                    if user is None:
-
-                        user = await user_repo.get_by_firebase_uid(uid=firebase_uid)
-                        if user: return user
-                        raise Exception("Failed to create or find user after race.")
-
-                    stmt_find_plan = select(SubscriptionPlan).where(SubscriptionPlan.slug == "free")
-                    free_plan = (await session.execute(stmt_find_plan)).scalar_one_or_none()
-
-                    if free_plan:
-
-                        sub_id = f"sub_{user.firebase_uid}_{int(datetime.now().timestamp())}"
-                        new_sub = UserSubscription(
-                            id=sub_id,
-                            user_id=user.id,
-                            plan_id=free_plan.id,
-                            status='active',
-                            is_manual=True,
-                            current_period_end=datetime.now(timezone.utc) + timedelta(days=365 * 100)
-                        )
-                        session.add(new_sub)
-
-                        if free_plan.credits_granted > 0:
-                            stmt_update_balance = (
-                                update(User)
-                                .where(User.id == user.id)
-                                .values(balance=free_plan.credits_granted)
-                            )
-                            await session.execute(stmt_update_balance)
-
-                await session.refresh(user, attribute_names=['subscription'])
-                if user.subscription:
-                    await session.refresh(user.subscription, attribute_names=['plan'])
-
-            return user
-
-        except IntegrityError as e:
-            user = await user_repo.get_by_firebase_uid(uid=firebase_uid)
-            if user: return user
+        if not user:
             raise credentials_exception
 
-        except Exception as e:
-            raise credentials_exception
-
-    except ValueError:
-        raise credentials_exception
+        return user
 
     except Exception as e:
+        logging.error(f"Auth dependency error: {e}")
         raise credentials_exception
 
 
