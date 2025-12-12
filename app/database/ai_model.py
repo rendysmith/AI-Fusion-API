@@ -21,3 +21,17 @@ class AiModel(Base):
     settings = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class PriorityModel(Base):
+    __tablename__ = "priority_models"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(50), nullable=True)
+    model_name = Column(String(50), nullable=False)
+    provider_name = Column(String(50), nullable=False)
+    provider = Column(String(50), nullable=False)
+    category = Column(String(50), nullable=True)
+    sort_priority = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
