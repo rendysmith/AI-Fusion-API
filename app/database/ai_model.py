@@ -25,7 +25,7 @@ class AiModel(Base):
 
 
 class PriorityModel(Base):
-    __tablename__ = "priority_models"
+    __tablename__ = "ai_model_backends"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(50), nullable=True)

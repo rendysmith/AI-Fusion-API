@@ -6,6 +6,7 @@ from app.schemas import ModelT2T
 router = APIRouter(prefix="/ai-models", tags=["AI Models"])
 
 
+
 @router.post("/get_text_to_text", status_code=status.HTTP_200_OK)
 async def get_text2text(
         payload: ModelT2T
