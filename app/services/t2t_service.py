@@ -6,6 +6,7 @@ import aiohttp
 from litellm import completion
 
 from app.database.engine import async_session_factory
+from app.schemas.ai_model import ChatMessageCreate, ChatSessionCreate
 from app.settings import settings
 from app.database.repositories.priority_model_repository import PriorityModelRepository
 
@@ -102,12 +103,12 @@ class UniversalLLM:
         )
         return response.choices[0].message.content
 
-    async def get_response(self, prompt, model_name, **kwargs):
+    async def get_response(self, user_id, prompt, model_slug, **kwargs):
         """
         Универсальный метод вызова любой модели.
 
         :param prompt: Текст запроса
-        :param model_name: Название модели (ChatGPT, Claude, Gemini, Perplexity)
+        :param model_slug: Название модели (ChatGPT, Claude, Gemini, Perplexity)
         :param kwargs: Доп. параметры (temperature, max_tokens и т.д.)
         """
         API_KEYS = {
@@ -119,7 +120,7 @@ class UniversalLLM:
         }
 
         pmr = PriorityModelRepository(async_session_factory)
-        providers = await pmr.get_by_proveder_all(model_name)
+        providers = await pmr.get_by_proveder_all(model_slug)
 
         if len(providers) == 0:
             return f"Провайдеров для {model} не найдено!"
@@ -131,6 +132,33 @@ class UniversalLLM:
 
             try:
                 result = await connecter(api_key, model, prompt)
+
+                # Создаем объект схемы
+                session_payload = ChatSessionCreate(
+                    user_id=user_id,
+                    model_slug=model_slug,
+                    chat_name="Первый диалог"
+                )
+
+                # Вызываем функцию репозитория
+                chat_repo = PriorityModelRepository(async_session_factory)
+                new_session = await chat_repo.create_session(session_payload)
+
+                # СОХРАНЯЕМ ID СЕССИИ ДЛЯ ДАЛЬНЕЙШЕЙ РАБОТЫ!
+                session_id = new_session.id
+
+               # Токены для prompt можно посчитать отдельной функцией, здесь для примера:
+                prompt_tokens = 5
+
+                user_message_payload = ChatMessageCreate(
+                    session_id=session_id,  # Используем ID, полученный на Шаге 1
+                    role='user',
+                    message_text=prompt,
+                    token_count=prompt_tokens
+                )
+
+                await chat_repo.create_message(user_message_payload)
+
                 return result
 
             except Exception as Ex:

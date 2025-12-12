@@ -117,3 +117,6 @@ class ChatMessageCreate(BaseModel):
     role: Literal['user', 'assistant', 'system'] # Ограничиваем возможные значения
     message_text: str
     token_count: int = 0
+
+class ChatHistoryRequest(BaseModel):
+    session_id: int = Field(..., description="ID существующей сессии чата.")

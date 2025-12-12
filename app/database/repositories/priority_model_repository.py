@@ -59,5 +59,19 @@ class PriorityModelRepository:
                 # Если session_id не существует, возникнет IntegrityError (Foreign Key violation)
                 raise ValueError(f"Session with ID '{payload.session_id}' not found.")
 
+    async def get_messages_by_session_id(self, session_id: int) -> List[ChatMessage]:
+        """
+        Получает все сообщения, принадлежащие конкретной сессии,
+        отсортированные по времени создания (в порядке диалога).
+        """
+        async with self.session_factory() as session:
+            stmt = (
+                select(ChatMessage)
+                .where(ChatMessage.session_id == session_id)
+                .order_by(asc(ChatMessage.created_at))  # Сортировка по возрастанию времени
+            )
+            result = await session.execute(stmt)
+            return result.scalars().all()
+
 
 
