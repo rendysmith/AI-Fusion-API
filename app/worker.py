@@ -37,7 +37,10 @@ logger = logging.getLogger(__name__)
 MODEL_PROCESSORS_PRIMARY = {
     'sora-2': grsai_provider.generate_sora_grsai,
     'veo-3-quality': grsai_provider.generate_veo_grsai,
-    'veo-3-fast': grsai_provider.generate_veo_grsai
+    'veo-3-fast': grsai_provider.generate_veo_grsai,
+
+    'nano-banana': grsai_provider.generate_nano_banana_grsai,
+    'nano-banana-pro': grsai_provider.generate_nano_banana_pro_grsai
 }
 
 MODEL_PROCESSORS_FALLBACK = {

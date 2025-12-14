@@ -19,6 +19,7 @@ from app.database.repositories.system_repository import SystemRepository
 from app.database.subscription_models import UserSubscription, SubscriptionPlan
 from app.services.auth_service import AuthService
 from app.services.firebase_service import verify_firebase_token
+from app.services.t2i_service import UniversalImageGenerator
 from app.services.t2t_service import UniversalLLM
 from app.settings import settings
 
@@ -249,3 +250,6 @@ def get_chat_repository() -> PriorityModelRepository:
 
 def get_llm_repository() -> UniversalLLM:
     return UniversalLLM(async_session_factory)
+
+def get_image_repository() -> UniversalImageGenerator:
+    return UniversalImageGenerator(async_session_factory)
