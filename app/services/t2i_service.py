@@ -5,7 +5,7 @@ import asyncio
 from typing import Optional, Dict, Any
 
 import aiohttp
-from litellm import completion
+from litellm import completion, image_generation
 
 from app.database.engine import async_session_factory
 from app.schemas.ai_model import ChatMessageCreate, ChatSessionCreate
@@ -15,8 +15,59 @@ from app.database.repositories.priority_model_repository import PriorityModelRep
 logger = logging.getLogger(__name__)
 
 class UniversalImageGenerator:
-    async def lite_llm(self):
-        pass
+    async def lite_llm(self, api_key: str, model: str, prompt: str, **kwargs):
+        """
+             Генерация через LiteLLM (DALL-E 3, Imagen и др.)
+             """
+        # 1. Извлекаем параметры
+        aspect_ratio = kwargs.get("aspect_ratio", "square")  # square, landscape, portrait
+        # DALL-E 3 требует конкретных разрешений, мапим их:
+        size_map = {
+            "square": "1024x1024",
+            "1:1": "1024x1024",
+            "auto": "1024x1024",
+            "landscape": "1792x1024",  # Широкий формат для DALL-E 3
+            "16:9": "1792x1024",
+            "portrait": "1024x1792",  # Вертикальный формат для DALL-E 3
+            "9:16": "1024x1792"
+        }
+
+        # Выбираем размер, если не нашли - дефолт 1024x1024
+        final_size = size_map.get(aspect_ratio, "1024x1024")
+
+        try:
+            logger.info(f"🚀 [LiteLLM] Запрос к {model}: {prompt[:30]}... Size: {final_size}")
+
+            # 2. Выполняем генерацию
+            # image_generation - синхронная функция, поэтому запускаем её в отдельном потоке,
+            # чтобы не блокировать основной цикл (asyncio loop)
+            response = await asyncio.to_thread(
+                image_generation,
+                prompt=prompt,
+                model=model,  # например: "dall-e-3"
+                api_key=api_key,  # Передаем ключ явно
+                size=final_size,
+                n=1  # Количество изображений
+            )
+
+            # 3. Извлекаем результат
+            # Структура ответа LiteLLM: response.data[0].url
+            if response and response.data:
+                image_url = response.data[0].url
+                logger.info(f"✅ [LiteLLM] Успех: {image_url}")
+                return image_url
+            else:
+                return "❌ LiteLLM вернул пустой ответ (без data)."
+
+        except Exception as e:
+            err_msg = str(e)
+            logger.error(f"❌ [LiteLLM] Error: {err_msg}")
+
+            # Обработка частых ошибок OpenAI (например, Content Policy)
+            if "safety" in err_msg.lower() or "content_policy_violation" in err_msg.lower():
+                return "❌ Ошибка: Запрос отклонен системой безопасности (Safety Policy)."
+
+            return f"❌ Ошибка провайдера: {err_msg}"
 
     async def _make_post_request(self, session: aiohttp.ClientSession, url: str, headers: Dict, payload: Dict) -> Dict:
         """Вспомогательный метод для выполнения запросов с обработкой ошибок."""
@@ -39,9 +90,7 @@ class UniversalImageGenerator:
                     api_key: str,
                     model: str,
                     prompt: str,
-                    aspect_ratio: str = "auto",
-                    image_size: str = "1K",  # <--- Добавлено: Размер (1K, 2K, 4K)
-                    urls: Optional[List[str]] = None  # <--- Добавлено: Список ссылок-референсов
+                    **kwargs
                     ) -> str:
         """
         Запускает генерацию, ждет завершения и возвращает URL картинки.
@@ -55,6 +104,11 @@ class UniversalImageGenerator:
         Returns:
             str: URL сгенерированного изображения или сообщение об ошибке.
         """
+
+        aspect_ratio = kwargs.get("aspect_ratio", "auto")
+        image_size = kwargs.get("image_size", "1K")
+        urls = kwargs.get("urls", None)
+
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}"
@@ -79,7 +133,7 @@ class UniversalImageGenerator:
         try:
             async with aiohttp.ClientSession() as session:
                 # Отправляем задачу
-                print(f"🚀 Отправка задачи: {prompt[:50]}...")
+                logger.info(f"🚀 Отправка задачи: {prompt[:50]}...")
                 submit_response = await self._make_post_request(session, submit_url, headers, submit_payload)
 
                 # Извлекаем ID задачи. API может вернуть структуру {data: {id: ...}} или {id: ...}
@@ -92,14 +146,14 @@ class UniversalImageGenerator:
                 if not task_id:
                     return f"❌ Ошибка: Не удалось получить ID задачи. Ответ: {submit_response}"
 
-                print(f"⏳ Задача получена ID: {task_id}. Ожидание генерации...")
+                prilogger.infont(f"⏳ Задача получена ID: {task_id}. Ожидание генерации...")
 
                 # 2. ОЖИДАНИЕ РЕЗУЛЬТАТА (Polling)
                 result_url = f"https://api.grsai.com/v1/draw/result"
                 result_payload = {"id": task_id}
 
                 attempts = 0
-                max_attempts = 30  # Ждем максимум 60 секунд (30 * 2 сек)
+                max_attempts = 45  # Ждем максимум 60 секунд (30 * 2 сек)
 
                 while attempts < max_attempts:
                     await asyncio.sleep(2)  # Пауза между проверками
@@ -162,47 +216,67 @@ class UniversalImageGenerator:
             return f"Провайдеров для {model} не найдено!"
 
         for prov in providers:
-            provider = prov.provider
-            api_key = API_KEYS[provider][0]
-            connecter = API_KEYS[provider][1]
+            provider_name = prov.provider  # Например, "Grsai"
 
-            try:
-                result = await connecter(api_key, model, prompt)
-
-                # Создаем объект схемы
-                session_payload = ChatSessionCreate(
-                    user_id=user_id,
-                    model_slug=model_slug,
-                    chat_name="Первый диалог"
-                )
-
-                # Вызываем функцию репозитория
-                chat_repo = PriorityModelRepository(async_session_factory)
-                new_session = await chat_repo.create_session(session_payload)
-
-                # СОХРАНЯЕМ ID СЕССИИ ДЛЯ ДАЛЬНЕЙШЕЙ РАБОТЫ!
-                session_id = new_session.id
-
-               # Токены для prompt можно посчитать отдельной функцией, здесь для примера:
-                prompt_tokens = 5
-
-                user_message_payload = ChatMessageCreate(
-                    session_id=session_id,  # Используем ID, полученный на Шаге 1
-                    role='user',
-                    message_text=prompt,
-                    token_count=prompt_tokens
-                )
-
-                await chat_repo.create_message(user_message_payload)
-
-                return result
-
-            except Exception as Ex:
-                logging.info(f'Error: {Ex}')
+            if provider_name not in API_KEYS:
+                logger.error(f"Провайдер {provider_name} есть в БД, но не настроен в коде (API_KEYS).")
                 continue
 
-        else:
-            return f"Ошибка при вызове модели {model}"
+            api_key = API_KEYS[provider_name][0]
+            connector_func = API_KEYS[provider_name][1]
+
+            try:
+                # ВАЖНО: передаем model_slug и **kwargs (где лежат настройки картинки)
+                # connector_func это self.grsai
+                result_url = await connector_func(api_key, model_slug, prompt, **kwargs)
+
+                # --- ЛОГИКА СОХРАНЕНИЯ В ИСТОРИЮ (ОПЦИОНАЛЬНО) ---
+                # Если result_url начинается с ошибки "❌", возможно, не стоит сохранять это как успешный чат
+                if str(result_url).startswith("❌"):
+                    logger.warning(f"Генерация вернула ошибку: {result_url}")
+                    # Можно вернуть ошибку сразу или попробовать следующего провайдера
+                    return result_url
+
+                try:
+                    chat_repo = PriorityModelRepository(async_session_factory)
+
+                    # Создаем сессию
+                    session_payload = ChatSessionCreate(
+                        user_id=user_id,
+                        model_slug=model_slug,
+                        chat_name=f"Image: {prompt[:20]}..."
+                    )
+                    new_session = await chat_repo.create_session(session_payload)
+
+                    # Сохраняем сообщение (промпт пользователя)
+                    user_message = ChatMessageCreate(
+                        session_id=new_session.id,
+                        role='user',
+                        message_text=prompt,
+                        token_count=len(prompt) // 4
+                    )
+                    await chat_repo.create_message(user_message)
+
+                    # Сохраняем ответ (URL картинки) как сообщение ассистента
+                    ai_message = ChatMessageCreate(
+                        session_id=new_session.id,
+                        role='assistant',
+                        message_text=result_url,  # Сохраняем ссылку как текст
+                        token_count=0
+                    )
+                    await chat_repo.create_message(ai_message)
+
+                except Exception as db_ex:
+                    logger.error(f"Ошибка при сохранении в БД: {db_ex}")
+                    # Не прерываем выполнение, если БД упала, главное - вернуть картинку пользователю
+
+                return result_url
+
+            except Exception as Ex:
+                logger.error(f'Ошибка при вызове провайдера {provider_name}: {Ex}')
+                continue  # Пробуем следующего провайдера
+
+        return f"Не удалось сгенерировать изображение ни одним провайдером для {model_slug}"
 
 if "__main__" in __name__:
 

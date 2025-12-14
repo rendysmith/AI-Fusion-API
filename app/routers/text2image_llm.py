@@ -1,14 +1,11 @@
 from typing import List
 
-import httpx
 from fastapi import APIRouter, HTTPException, status, Depends
 from app import schemas
 from app.database.main_models import User
 from app.dependencies import get_llm_repository, get_image_repository
 from app.main import AUTH_DEPENDENCY
 from app.services.t2i_service import UniversalImageGenerator
-
-# from app.core.config import settings # Пример импорта настроек
 
 router = APIRouter(prefix="/generation", tags=["AI Generation"])
 
