@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import Literal, Optional, Any, Dict
+from typing import Literal, Optional, Any, Dict, List
 from pydantic import BaseModel, Field, field_validator, ConfigDict, computed_field
 
 
@@ -120,3 +120,63 @@ class ChatMessageCreate(BaseModel):
 
 class ChatHistoryRequest(BaseModel):
     session_id: int = Field(..., description="ID существующей сессии чата.")
+
+
+
+# Перечисления для строгой типизации параметров Nano Banana
+class AspectRatioEnum(str, Enum):
+    AUTO = "auto"
+    SQUARE = "1:1"
+    LANDSCAPE_16_9 = "16:9"
+    PORTRAIT_9_16 = "9:16"
+    STANDARD_4_3 = "4:3"
+    PORTRAIT_3_4 = "3:4"
+    PHOTO_3_2 = "3:2"
+    PORTRAIT_2_3 = "2:3"
+    LANDSCAPE_5_4 = "5:4"
+    PORTRAIT_4_5 = "4:5"
+    WIDE_21_9 = "21:9"
+
+class ImageSizeEnum(str, Enum):
+    K1 = "1K"
+    K2 = "2K"
+    K4 = "4K"
+
+class NanoBananaModelEnum(str, Enum):
+    FAST = "nano-banana-fast"
+    NORMAL = "nano-banana"
+    PRO = "nano-banana-pro"
+    PRO_VT = "nano-banana-pro-vt"
+
+# --- Request Schemas ---
+
+class GenerateRequest(BaseModel):
+    model: NanoBananaModelEnum = Field(..., description="Модель для генерации", example="nano-banana")
+    prompt: str = Field(..., description="Текстовое описание изображения", example="A beautiful girl with long hair")
+    aspectRatio: Optional[AspectRatioEnum] = Field("auto", description="Соотношение сторон")
+    imageSize: Optional[ImageSizeEnum] = Field("1K", description="Разрешение (только для Pro моделей)")
+    urls: Optional[List[str]] = Field(None, description="Ссылки на референсные изображения")
+    webHook: Optional[str] = Field("-1", description="URL для коллбека. Если '-1', возвращает ID сразу для пулинга.")
+    shutProgress: Optional[bool] = Field(False, description="Отключить уведомления о прогрессе")
+
+class GetResultRequest(BaseModel):
+    id: str = Field(..., description="ID задачи генерации")
+
+# --- Response Schemas ---
+
+class GenerationResultItem(BaseModel):
+    url: str
+    content: Optional[str] = None
+
+class GenerationResponse(BaseModel):
+    id: str
+    results: Optional[List[GenerationResultItem]] = None
+    progress: Optional[int] = 0
+    status: str
+    failure_reason: Optional[str] = None
+    error: Optional[str] = None
+
+class PollingResponseWrapper(BaseModel):
+    code: int
+    msg: str
+    data: GenerationResponse

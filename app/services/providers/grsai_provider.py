@@ -328,7 +328,7 @@ async def _generate_nano_base(
 
         image_url = await _poll_result(session, provider_task_id, model_type='nano_banana')
 
-        final_url = await s3_uploader.download_and_upload_video(
+        final_url = await s3_uploader.download_and_upload_image(
             session=session,
             source_url=image_url,
             task_id=task_id
