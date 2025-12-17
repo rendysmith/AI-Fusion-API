@@ -124,3 +124,23 @@ class S3UploaderService:
             default_ext=".png",
             default_content_type="image/png"
         )
+
+    async def upload_file(self, file_data: bytes, key: str, content_type: str) -> str:
+        """
+        Загружает байты напрямую в S3 (для админки и генерации превью).
+        """
+        bucket_name = settings.YANDEX_BUCKET_NAME
+
+        try:
+            await self.s3_client.put_object(
+                Bucket=bucket_name,
+                Key=key,
+                Body=file_data,
+                ContentType=content_type,
+            )
+
+            return f"{settings.YANDEX_STORAGE_ENDPOINT}/{bucket_name}/{key}"
+
+        except Exception as e:
+            logger.error(f"S3 Direct Upload Error: {e}")
+            raise S3UploadServiceError(f"Failed to upload file to S3: {e}")

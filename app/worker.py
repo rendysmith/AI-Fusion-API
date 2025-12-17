@@ -10,6 +10,9 @@ import aiohttp
 from aiobotocore.session import get_session
 from aiohttp import ClientTimeout
 
+import redis.asyncio as aioredis
+from app.services.redis_publisher import RedisPublisher
+
 from app.database.engine import async_session_factory
 from app.database.redis_db import get_redis_client
 from app.database.repositories.analytics_repository import AnalyticsRepository
@@ -54,7 +57,8 @@ async def process_task(session: aiohttp.ClientSession,
                        analytics_repo: AnalyticsRepository,
                        user_repo: UserRepository,
                        s3_uploader: S3UploaderService,
-                       circuit_breaker: CircuitBreakerRepository
+                       circuit_breaker: CircuitBreakerRepository,
+                       publisher: RedisPublisher
                        ):
 
     start_time = time.time()
@@ -107,6 +111,25 @@ async def process_task(session: aiohttp.ClientSession,
         await task_repo.complete_task(task_id, result_data)
         logger.info(f"TaskID: {task_id} | Задача успешно завершена.")
 
+        try:
+            user_id = task_data.get("user_id")
+            if user_id:
+                user = await user_repo.get_by_id(user_id)
+
+                if user and user.telegram_id:
+                    file_url = result_data.get("video_url") or result_data.get("image_url")
+                    prompt_text = params.get("prompt", "")[:100]
+
+                    if file_url:
+                        await publisher.publish_completion(
+                            task_id=str(task_id),
+                            telegram_id=user.telegram_id,
+                            file_url=file_url,
+                            prompt=prompt_text
+                        )
+        except Exception as pub_e:
+            logger.error(f"TaskID: {task_id} | Ошибка отправки уведомления в Redis: {pub_e}")
+
         if plan_is_unlimited and delay_factor > 1.0:
             original_duration = params.get('duration', 10)
             delay_seconds = (original_duration * delay_factor) - original_duration
@@ -139,6 +162,36 @@ async def process_task(session: aiohttp.ClientSession,
         await refund_on_failure(task_data, user_repo)
 
     except FatalProviderError as e:
+
+        error_str = str(e).lower()
+
+
+        SOFT_FAIL_KEYWORDS = [
+            "check the prompt",
+            "image parameters",
+            "timeout polling",
+            "failed to generate",
+            "system error",
+            "生成失败",
+            "max retry",
+            "maximum retries"
+        ]
+
+
+        is_soft_error = any(keyword in error_str for keyword in SOFT_FAIL_KEYWORDS)
+
+        if is_soft_error:
+            logger.warning(f"TaskID: {task_id} | ⚠️ Soft Provider Error (Цепь не трогаем): {e}")
+
+            user_msg = "Ошибка генерации на стороне нейросети. Попробуйте изменить промпт или повторить позже."
+            if "timeout" in error_str:
+                user_msg = "Генерация заняла слишком много времени. Попробуйте позже."
+
+            await task_repo.fail_task(task_id, user_msg)
+            await refund_on_failure(task_data, user_repo)
+
+            return
+
         logger.error(f"TaskID: {task_id} | 💥 Provider Crash: {e}")
 
         current_tb = traceback.format_exc()
@@ -213,7 +266,8 @@ async def handle_message(
         task_repo: TaskRepository,
         analytics_repo: AnalyticsRepository,
         user_repo: UserRepository,
-        circuit_breaker_repo: CircuitBreakerRepository
+        circuit_breaker_repo: CircuitBreakerRepository,
+        publisher: RedisPublisher
 ):
     task_data = None
     receipt_handle = message['ReceiptHandle']
@@ -232,7 +286,8 @@ async def handle_message(
             task_repo=task_repo,
             analytics_repo=analytics_repo,
             user_repo=user_repo,
-            circuit_breaker=circuit_breaker_repo
+            circuit_breaker=circuit_breaker_repo,
+            publisher=publisher
         )
 
         await sqs_client.delete_message(
@@ -251,9 +306,6 @@ async def handle_message(
 
 
 async def run_task_with_semaphore(sem, *args):
-    """
-    Запускает задачу и ГАРАНТИРОВАННО освобождает семафор после завершения.
-    """
     try:
         await handle_message(*args)
     finally:
@@ -268,6 +320,7 @@ async def main():
     redis_client = get_redis_client()
     circuit_breaker_repo = CircuitBreakerRepository(redis_client)
 
+    publisher = RedisPublisher(redis_client)
 
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 
@@ -339,7 +392,8 @@ async def main():
                                             task_repo,
                                             analytics_repo,
                                             user_repo,
-                                            circuit_breaker_repo
+                                            circuit_breaker_repo,
+                                            publisher
                                         )
                                     )
 
