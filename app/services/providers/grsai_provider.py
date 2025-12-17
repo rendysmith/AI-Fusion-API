@@ -407,46 +407,46 @@ if __name__ == "__main__":
             async with aiohttp.ClientSession() as http_session:
 
                 # --- ТЕСТ 1: SORA 2 ---
-                # print("\n🎥 [1/2] Тестируем Sora-2...")
-                # sora_params = {
-                #     "prompt": "A cinematic drone shot of a futuristic cyberpunk city with neon lights, 8k",
-                #     "orientation": "landscape",
-                #     "duration": 10
-                # }
-                # sora_task_id = "test_grsai_sora_001"
-                #
-                # try:
-                #     result = await generate_sora_grsai(
-                #         session=http_session,
-                #         params=sora_params,
-                #         task_id=sora_task_id,
-                #         s3_uploader=uploader
-                #     )
-                #     print(f"✅ SORA SUCCESS! URL: {result['video_url']}")
-                # except Exception as e:
-                #     print(f"❌ SORA FAILED: {e}")
-
-                # --- ТЕСТ 2: VEO 3 ---
-                print("\n🎥 [2/2] Тестируем Veo-3...")
-                veo_params = {
-                    "prompt": "A cute cat playing with a ball on green grass, realistic",
+                print("\n🎥 [1/2] Тестируем Sora-2...")
+                sora_params = {
+                    "prompt": "A cinematic drone shot of a futuristic cyberpunk city with neon lights, 8k",
                     "orientation": "landscape",
-                    # "image_url": "https://..." # Можно раскомментировать для теста image-to-video
+                    "duration": 10
                 }
-                veo_task_id = "test_grsai_veo_001"
+                sora_task_id = "test_grsai_sora_001"
 
                 try:
-
-                    result = await generate_veo_grsai(
+                    result = await generate_sora_grsai(
                         session=http_session,
-                        params=veo_params,
-                        task_id=veo_task_id,
-                        s3_uploader=uploader,
-                        model_name="veo-3-fast"
+                        params=sora_params,
+                        task_id=sora_task_id,
+                        s3_uploader=uploader
                     )
-                    print(f"✅ VEO SUCCESS! URL: {result['video_url']}")
+                    print(f"✅ SORA SUCCESS! URL: {result['video_url']}")
                 except Exception as e:
-                    print(f"❌ VEO FAILED: {e}")
+                    print(f"❌ SORA FAILED: {e}")
+
+                # --- ТЕСТ 2: VEO 3 ---
+                # print("\n🎥 [2/2] Тестируем Veo-3...")
+                # veo_params = {
+                #     "prompt": "A cute cat playing with a ball on green grass, realistic",
+                #     "orientation": "landscape",
+                #     # "image_url": "https://..." # Можно раскомментировать для теста image-to-video
+                # }
+                # veo_task_id = "test_grsai_veo_001"
+                #
+                # try:
+                #
+                #     result = await generate_veo_grsai(
+                #         session=http_session,
+                #         params=veo_params,
+                #         task_id=veo_task_id,
+                #         s3_uploader=uploader,
+                #         model_name="veo-3-fast"
+                #     )
+                #     print(f"✅ VEO SUCCESS! URL: {result['video_url']}")
+                # except Exception as e:
+                #     print(f"❌ VEO FAILED: {e}")
 
 
     # Запускаем

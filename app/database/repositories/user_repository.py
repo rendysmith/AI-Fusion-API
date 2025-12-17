@@ -37,8 +37,7 @@ class UserRepository(BaseRepository):
                 select(User)
                 .where(User.firebase_uid == uid)
                 .options(
-                    selectinload(User.subscription)
-                    .joinedload(UserSubscription.plan)
+                    selectinload(User.subscription).joinedload(UserSubscription.plan)
                 )
             )
             result = await session.execute(stmt)

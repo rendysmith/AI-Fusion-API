@@ -50,23 +50,19 @@ class User(Base):
     subscription = relationship(
         "UserSubscription",
         primaryjoin="and_(User.id == UserSubscription.user_id, UserSubscription.status == 'active')",
-        uselist=False,
-        lazy="joined"
+        uselist=False
     )
 
     referrer = relationship(
         "User",
         remote_side=[id])
 
-    # === ИСПРАВЛЕНИЕ ===
     @property
     def referral_code(self) -> str | None:
-        # Проверка на случай, если объект создан, но еще не сохранен в БД (нет ID)
+
         if self.id is None:
             return None
 
-        # Вызываем синхронный статический метод.
-        # Не создаем экземпляр класса (hr = HasherRef()) каждый раз — это лишняя нагрузка.
         return HasherRef.encode(self.id)
 
 

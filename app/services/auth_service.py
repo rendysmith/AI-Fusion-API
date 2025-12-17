@@ -14,40 +14,27 @@ class AuthService:
         self.plan_repo = plan_repo
 
     async def get_or_create_user(self, firebase_uid: str, email: str, is_trusted: bool) -> User:
-        """
-        Основной метод: находит или создает юзера, и проверяет бонусы.
-        """
-        # 1. Пытаемся найти
         user = await self.user_repo.get_by_firebase_uid(firebase_uid)
 
-        # 2. Если нет — создаем
         if not user:
-            user = await self._create_user_entry(firebase_uid, email)
+            await self._create_user_entry(firebase_uid, email)
+            user = await self.user_repo.get_by_firebase_uid(firebase_uid)
 
-        # 3. Проверяем бонусы (Onboarding)
-        # Если юзер доверенный И у него нет подписки — выдаем Free
-        if is_trusted and user.subscription is None:
+        if user and is_trusted and user.subscription is None:
             await self._grant_free_plan(user)
-            # Обновляем объект, чтобы вернуть актуальный баланс
             user = await self.user_repo.get_by_firebase_uid(firebase_uid)
 
         return user
 
-    async def _create_user_entry(self, firebase_uid: str, email: str) -> User:
+    async def _create_user_entry(self, firebase_uid: str, email: str):
+
         async with self.user_repo.session_factory() as session:
             async with session.begin():
                 stmt = pg_insert(User).values(
                     firebase_uid=firebase_uid,
                     email=email
-                ).on_conflict_do_nothing().returning(User)
-
-                user = (await session.execute(stmt)).scalar_one_or_none()
-
-        # Обработка гонки (если юзер создался параллельным запросом)
-        if not user:
-            user = await self.user_repo.get_by_firebase_uid(firebase_uid)
-
-        return user
+                ).on_conflict_do_nothing()
+                await session.execute(stmt)
 
     async def _grant_free_plan(self, user: User):
         logger.info(f"Granting FREE plan to trusted user {user.id}...")

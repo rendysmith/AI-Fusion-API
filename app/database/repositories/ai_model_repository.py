@@ -1,5 +1,5 @@
 import json
-from sqlalchemy import select, update, delete, asc
+from sqlalchemy import select, asc
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from typing import List, Optional
