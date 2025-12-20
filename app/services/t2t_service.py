@@ -2,8 +2,8 @@ import logging
 from typing import Tuple, Optional, Dict
 
 from openai import AsyncOpenAI
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
-from app.database.engine import async_session_factory
 from app.database.repositories.chat_repository import ChatRepository
 from app.schemas import ChatMessageCreate, ChatSessionCreate
 from app.settings import settings
@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 class UniversalLLM:
     _clients: Dict[str, AsyncOpenAI] = {}
+
+    def __init__(self, async_session_factory: async_sessionmaker[AsyncSession]):
+        self.async_session_factory = async_session_factory
 
     def _get_provider_config(self, provider_name: str) -> Tuple[Optional[str], Optional[str]]:
         """
@@ -53,8 +56,8 @@ class UniversalLLM:
         Главный метод: Сессия -> История -> Роутинг -> Ответ
         """
 
-        chat_repo = ChatRepository(async_session_factory)
-        priority_repo = PriorityModelRepository(async_session_factory)
+        chat_repo = ChatRepository(self.async_session_factory)
+        priority_repo = PriorityModelRepository(self.async_session_factory)
 
         current_session_id = session_id
 
