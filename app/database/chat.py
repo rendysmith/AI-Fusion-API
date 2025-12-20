@@ -5,7 +5,6 @@ from app.database.base import Base
 
 
 class ChatSession(Base):
-    __abstract__ = True
     __tablename__ = "chat_sessions"
 
 
@@ -21,7 +20,6 @@ class ChatSession(Base):
 
 
 class ChatMessage(Base):
-    __abstract__ = True
     __tablename__ = "chat_messages"
 
 
