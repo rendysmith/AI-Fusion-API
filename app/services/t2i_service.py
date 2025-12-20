@@ -8,7 +8,7 @@ import aiohttp
 from litellm import completion, image_generation
 
 from app.database.engine import async_session_factory
-from app.schemas.ai_model import ChatMessageCreate, ChatSessionCreate
+from app.schemas import ChatMessageCreate, ChatSessionCreate
 from app.settings import settings
 from app.database.repositories.priority_model_repository import PriorityModelRepository
 

@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from typing import List, Optional
 
-from app.database.ai_model import AiModel
+from app.database.ai import AiModel
 from app.schemas import AiModelCreate, AiModelUpdate
 
 
@@ -51,11 +51,11 @@ class AiModelRepository:
     async def create(self, payload: AiModelCreate) -> AiModel:
         async with self.session_factory() as session:
             try:
-                settings_dict = json.loads(payload.settings) if payload.settings else None
+                data = payload.model_dump(exclude={'settings'})
 
                 db_model = AiModel(
-                    **payload.dict(exclude={'settings'}),
-                    settings=settings_dict
+                    **data,
+                    settings=payload.settings
                 )
                 session.add(db_model)
                 await session.commit()
@@ -71,10 +71,9 @@ class AiModelRepository:
             if not model:
                 return None
 
-            update_data = payload.dict(exclude_unset=True)
+            update_data = payload.model_dump(exclude_unset=True)
 
-            if 'settings' in update_data and isinstance(update_data['settings'], str):
-                update_data['settings'] = json.loads(update_data['settings'])
+
 
             for key, value in update_data.items():
                 setattr(model, key, value)

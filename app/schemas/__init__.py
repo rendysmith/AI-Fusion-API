@@ -42,14 +42,25 @@ from .auth import (
 )
 
 
-from .ai_model import (
+from .ai import (
     AiModelBase,
     AiModelCreate,
     AiModelUpdate,
     AiModelResponse,
-    ModelT2T,
+    BackendResponse,
+    BackendBase,
+    BackendUpdate,
+    BackendCreate,
 )
 
+from .chat import (
+    ModelT2T,
+    ChatMessageResponse,
+    ChatHistoryRequest,
+    ChatMessageCreate,
+    ChatSessionCreate,
+    ChatSessionResponse
+)
 
 from .template import (
     VideoTemplateBase,

@@ -12,7 +12,8 @@ import app.database.task_models
 import app.database.analytics_models
 import app.database.billing_models
 import app.database.subscription_models
-import app.database.ai_model
+import app.database.chat
+import app.database.ai
 import app.database.video_template_models
 import app.database.metric_models
 

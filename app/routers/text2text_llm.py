@@ -1,48 +1,68 @@
 from typing import List
 
-from fastapi import APIRouter, status, Depends
+from fastapi import APIRouter, status, Depends, HTTPException
 
-from app.database.ai_model import ChatMessage
-from app.database.engine import async_session_factory
 from app.database.main_models import User
-from app.database.repositories.priority_model_repository import PriorityModelRepository
+from app.database.repositories.chat_repository import ChatRepository
 from app.dependencies import get_chat_repository, get_llm_repository
-from app.main import AUTH_DEPENDENCY
-from app.schemas.ai_model import ChatHistoryRequest
+from app.dependencies import AUTH_DEPENDENCY
 from app.services.t2t_service import UniversalLLM
-from app.schemas import ModelT2T
+from app.schemas import ModelT2T, ChatHistoryRequest, ChatMessageResponse, ChatSessionResponse
 
-router = APIRouter(prefix="/ai-models", tags=["AI Models"])
+router = APIRouter(prefix="/chat", tags=["Chat"])
 
 
-@router.post("/get_history", response_model=List[ChatMessage])  # Предполагаем, что ChatMessage - это схема ответа
+
+@router.post("/history", response_model=List[ChatMessageResponse])
 async def get_chat_history(
         payload: ChatHistoryRequest,
-        chat_repo: PriorityModelRepository = Depends(get_chat_repository)
+        chat_repo: ChatRepository = Depends(get_chat_repository)
 ):
     """
-    Получает полную историю сообщений для указанного session_id,
-    отсортированную в хронологическом порядке.
+    Получает полную историю сообщений для указанного session_id.
     """
     messages = await chat_repo.get_messages_by_session_id(
         session_id=payload.session_id
     )
+    return messages or []
 
-    if not messages:
-        return []
 
-    return messages
 
-@router.post("/get_text_to_text", status_code=status.HTTP_200_OK)
+@router.post("/completions", status_code=status.HTTP_200_OK)
 async def get_text2text(
         payload: ModelT2T,
         user: User = AUTH_DEPENDENCY,
         repo: UniversalLLM = Depends(get_llm_repository)
 ):
-
-    result = await repo.get_response(
+    result_text, session_id = await repo.get_response(
         user_id=user.id,
+        prompt=payload.prompt,
         model_slug=payload.model,
-        prompt=payload.prompt)
+        session_id=payload.session_id
+    )
 
-    return {"result": result}
+    return {
+        "result": result_text,
+        "session_id": session_id
+    }
+
+
+@router.get("/sessions", response_model=List[ChatSessionResponse])
+async def get_user_sessions(
+    user: User = AUTH_DEPENDENCY,
+    chat_repo: ChatRepository = Depends(get_chat_repository)
+):
+    return await chat_repo.get_user_sessions(user.id)
+
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session(
+    session_id: int,
+    user: User = AUTH_DEPENDENCY,
+    chat_repo: ChatRepository = Depends(get_chat_repository)
+):
+    success = await chat_repo.delete_session(session_id, user.id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    return None

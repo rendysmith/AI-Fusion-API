@@ -1,178 +1,129 @@
-import asyncio
 import logging
-import mimetypes
+from typing import Tuple, Optional, Dict
 
-import aiohttp
-from litellm import completion
+from openai import AsyncOpenAI
 
 from app.database.engine import async_session_factory
-from app.schemas.ai_model import ChatMessageCreate, ChatSessionCreate
+from app.database.repositories.chat_repository import ChatRepository
+from app.schemas import ChatMessageCreate, ChatSessionCreate
 from app.settings import settings
 from app.database.repositories.priority_model_repository import PriorityModelRepository
 
 logger = logging.getLogger(__name__)
 
+
 class UniversalLLM:
-    async def grsai(self, api_key: str, model: str, question: str) -> str:
+    _clients: Dict[str, AsyncOpenAI] = {}
+
+    def _get_provider_config(self, provider_name: str) -> Tuple[Optional[str], Optional[str]]:
         """
-        Задаёт вопрос модели gpt-4o-all через API Grsai.
-
-        Args:
-            api_key (str): Ваш токен доступа к API Grsai.
-            question (str): Вопрос, который вы хотите задать модели.
-
-        Returns:
-            str: Ответ от модели или сообщение об ошибке.
+        Конфигурация провайдеров.
+        Возвращает (API Key, Base URL).
         """
-        url = "https://api.grsai.com/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": "You are a helpful, accurate, and concise assistant."},
-                {"role": "user", "content": question}
-            ],
-            "temperature": 0.7,
-            "stream": False
-        }
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                        url,
-                        headers=headers,
-                        json=payload,
-                        timeout=aiohttp.ClientTimeout(total=30)
-                ) as resp:
-                    data = await resp.json()  # Сначала получаем JSON
+        if provider_name == "Google":
+            return settings.GEMINI_API_KEY, "https://generativelanguage.googleapis.com/v1beta/openai/"
 
-                    print(data)
+        elif provider_name == "Grsai":
+            return settings.GRSAI_API_KEY, "https://api.grsai.com/v1"
 
-                    if resp.status != 200:
-                        # Обработка стандартных ошибок по статусу (401, 403, 429, 500 и т.д.)
-                        msg = data.get("error", {}).get("message", await resp.text())
-                        return f"❌ API error ({resp.status}): {msg}"
+        elif provider_name in ["ChatGPT", "OpenAI"]:
+            return settings.OPENAI_API_KEY, None
 
-                    # --- НАДЕЖНОЕ ИЗВЛЕЧЕНИЕ КОНТЕНТА ---
-                    try:
-                        # 1. Получаем список 'choices'. Если нет, то пустой список.
-                        choices = data.get("choices", [])
-                        if not choices:
-                            return f"❌ Некорректный ответ от API: отсутствует 'choices' или он пуст. Ответ: {data}"
+        return None, None
 
-                        # 2. Получаем объект 'message' (для non-stream) ИЛИ 'delta' (для stream).
-                        # Если ни того, ни другого нет, то пустой словарь.
-                        message_container = choices[0].get("message") or choices[0].get("delta", {})
+    async def _get_or_create_client(self, provider_name: str) -> Optional[AsyncOpenAI]:
+        """Singleton для клиентов (чтобы не пересоздавать подключение)"""
+        if provider_name in self._clients:
+            return self._clients[provider_name]
 
-                        # 3. Получаем 'content' из контейнера. Если нет, то None.
-                        content = message_container.get("content")
+        api_key, base_url = self._get_provider_config(provider_name)
 
-                        if content is None:
-                            # Если контент пуст, но ответ успешный, возвращаем сообщение об этом
-                            return "✅ Успешный ответ, но модель не сгенерировала текстовый контент."
+        if not api_key:
+            return None
 
-                        return str(content).strip()
+        logger.info(f"⚡️ Init OpenAI Client for: {provider_name}")
+        new_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self._clients[provider_name] = new_client
 
-                    except IndexError:
-                        # На случай, если choices[0] недоступен
-                        return f"❌ Некорректный ответ от API: 'choices' не содержит элементов. Ответ: {data}"
-                    # --------------------------------------
+        return new_client
 
-            # Перехватываем ошибки подключения и таймауты
-        except asyncio.TimeoutError:
-            return "❌ Таймаут: сервер не ответил вовремя."
-        except aiohttp.ClientError as e:
-            return f"❌ Ошибка подключения: {e}"
-        except Exception as e:
-            # Общий перехват, который поймает любой другой сбой парсинга
-            return f"❌ Непредвиденная ошибка при обработке ответа: {e}"
-
-    async def lite_llm(self, api_key: str, model: str, question: str, **kwargs):
-        messages = [
-            {"role": "user", "content": question}
-        ]
-
-        # LiteLLM сам понимает, какое API дергать, исходя из названия модели
-        response = completion(
-            model=model,
-            messages=messages,
-            api_key=api_key,
-            **kwargs
-        )
-        return response.choices[0].message.content
-
-    async def get_response(self, user_id, prompt, model_slug, **kwargs):
+    async def get_response(self, user_id: int, prompt: str, model_slug: str, session_id: int = None) -> Tuple[
+        str, Optional[int]]:
         """
-        Универсальный метод вызова любой модели.
-
-        :param prompt: Текст запроса
-        :param model_slug: Название модели (ChatGPT, Claude, Gemini, Perplexity)
-        :param kwargs: Доп. параметры (temperature, max_tokens и т.д.)
+        Главный метод: Сессия -> История -> Роутинг -> Ответ
         """
-        API_KEYS = {
-            "ChatGPT": [settings.OPENAI_API_KEY, self.lite_llm],
-            "Anthropic": [settings.ANTHROPIC_API_KEY, self.lite_llm],
-            "Google": [settings.GEMINI_API_KEY, self.lite_llm],
-            "Perplexity": [settings.PERPLEXITY_API_KEY, self.lite_llm],
-            "Grsai": [settings.GRSAI_API_KEY, self.grsai]
-        }
 
-        pmr = PriorityModelRepository(async_session_factory)
-        providers = await pmr.get_by_proveder_all(model_slug)
+        chat_repo = ChatRepository(async_session_factory)
+        priority_repo = PriorityModelRepository(async_session_factory)
 
-        if len(providers) == 0:
-            return f"Провайдеров для {model} не найдено!"
+        current_session_id = session_id
+
+        if current_session_id:
+            session_obj = await chat_repo.get_session_by_id(current_session_id)
+            if not session_obj or session_obj.user_id != user_id:
+                current_session_id = None
+
+        if not current_session_id:
+            session_payload = ChatSessionCreate(
+                user_id=user_id,
+                model_slug=model_slug,
+                chat_name=prompt[:40]
+            )
+            new_session = await chat_repo.create_session(session_payload)
+            current_session_id = new_session.id
+
+        messages = [{"role": "system", "content": "You are a helpful assistant."}]
+
+        if session_id:
+            history = await chat_repo.get_messages_by_session_id(current_session_id)
+            for msg in history:
+                messages.append({"role": msg.role, "content": msg.message_text})
+
+        messages.append({"role": "user", "content": prompt})
+
+        await chat_repo.create_message(ChatMessageCreate(
+            session_id=current_session_id,
+            role='user',
+            message_text=prompt,
+            token_count=len(prompt) // 4
+        ))
+
+        providers = await priority_repo.get_by_proveder_all(model_slug)
+        if not providers:
+            return "Ошибка: Провайдеры для модели не настроены.", current_session_id
+
+        ai_text = None
 
         for prov in providers:
-            provider = prov.provider
-            api_key = API_KEYS[provider][0]
-            connecter = API_KEYS[provider][1]
+            provider_name = prov.provider
+            client = await self._get_or_create_client(provider_name)
 
-            try:
-                result = await connecter(api_key, model, prompt)
-
-                # Создаем объект схемы
-                session_payload = ChatSessionCreate(
-                    user_id=user_id,
-                    model_slug=model_slug,
-                    chat_name="Первый диалог"
-                )
-
-                # Вызываем функцию репозитория
-                chat_repo = PriorityModelRepository(async_session_factory)
-                new_session = await chat_repo.create_session(session_payload)
-
-                # СОХРАНЯЕМ ID СЕССИИ ДЛЯ ДАЛЬНЕЙШЕЙ РАБОТЫ!
-                session_id = new_session.id
-
-               # Токены для prompt можно посчитать отдельной функцией, здесь для примера:
-                prompt_tokens = 5
-
-                user_message_payload = ChatMessageCreate(
-                    session_id=session_id,  # Используем ID, полученный на Шаге 1
-                    role='user',
-                    message_text=prompt,
-                    token_count=prompt_tokens
-                )
-
-                await chat_repo.create_message(user_message_payload)
-
-                return result
-
-            except Exception as Ex:
-                logging.info(f'Error: {Ex}')
+            if not client:
                 continue
 
-        else:
-            return f"Ошибка при вызове модели {model}"
+            try:
 
-if "__main__" in __name__:
-    ullm = UniversalLLM()
-    api_key = 'sk-3b00533d9f574087a4ee67c61dde992c'
-    model = 'gemini-2.5-flash'
-    prompt = 'Кто такой Илон Маск?'
+                response = await client.chat.completions.create(
+                    model=model_slug,
+                    messages=messages,
+                    temperature=0.7
+                )
+                ai_text = response.choices[0].message.content
+                if ai_text:
+                    break
 
-    a = asyncio.run(ullm.grsai(api_key, model, prompt))
-    print(a)
+            except Exception as e:
+                logger.warning(f"⚠️ Provider {provider_name} failed: {e}. Switching...")
+                continue
+
+        if not ai_text:
+            return "Извините, все сервисы временно недоступны.", current_session_id
+
+        await chat_repo.create_message(ChatMessageCreate(
+            session_id=current_session_id,
+            role='assistant',
+            message_text=ai_text,
+            token_count=len(ai_text) // 4
+        ))
+
+        return ai_text, current_session_id

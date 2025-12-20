@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from typing import List
 
 from app.database.billing_models import PlanModelAccess
-from app.database.ai_model import AiModel
+from app.database.ai import AiModel
 from app.schemas import PlanModelAccessCreate
 
 

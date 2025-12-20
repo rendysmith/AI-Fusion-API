@@ -21,7 +21,7 @@ from app.database.engine import engine
 from app import schemas
 from app import dependencies
 from app.database.repositories.user_repository import UserRepository
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, AUTH_DEPENDENCY
 from app.documentation import API_DESCRIPTION
 from app.schemas import TaskStatusResponse
 from app.services.firebase_service import initialize_firebase
@@ -46,6 +46,9 @@ from app.routers import telegram as telegram_router
 from app.routers import system as system_router
 from app.routers import storage as storage_router
 from app.routers import admin_billing as admin_billing_router
+from app.routers import admin_models as admin_models_router
+from app.routers import text2text_llm as text2text_llm_router
+
 
 import app.database.main_models
 import app.database.analytics_models
@@ -99,8 +102,6 @@ async def lifespan(app: FastAPI):
                 yield
 
 
-AUTH_DEPENDENCY = Depends(get_current_user)
-
 
 
 app = FastAPI(
@@ -134,6 +135,8 @@ app.include_router(metrics_router.router)
 app.include_router(system_router.router)
 app.include_router(storage_router.router)
 app.include_router(admin_billing_router.admin_router)
+app.include_router(admin_models_router.admin_router)
+app.include_router(text2text_llm_router.router)
 
 app.add_middleware(
     CORSMiddleware,

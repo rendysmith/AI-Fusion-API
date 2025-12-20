@@ -7,8 +7,7 @@ import aiohttp
 
 from app.exceptions import FatalProviderError, UserValidationError
 from app.settings import settings
-from app.services.s3_uploader import S3UploaderService, S3UploadServiceError
-from app.database.repositories.circuit_breaker_repository import CircuitBreakerRepository
+from app.services.s3_uploader import S3UploaderService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

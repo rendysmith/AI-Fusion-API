@@ -5,7 +5,7 @@ from typing import Any, AsyncGenerator
 
 import aiohttp
 import redis.asyncio as aioredis
-from fastapi import Depends, HTTPException, Security, Request, status
+from fastapi import Depends, HTTPException, Security, Request, status, Header
 from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from sqlalchemy import update, select
 from sqlalchemy.exc import IntegrityError
@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app import schemas
 from app.database.main_models import User
 from app.database.engine import async_session_factory
+from app.database.repositories.chat_repository import ChatRepository
 from app.database.repositories.priority_model_repository import PriorityModelRepository
 from app.database.repositories.system_repository import SystemRepository
 from app.database.subscription_models import UserSubscription, SubscriptionPlan
@@ -190,8 +191,34 @@ def get_auth_service(
 
 async def get_current_user(
         token: str = Depends(oauth2_scheme),
-        auth_service: AuthService = Depends(get_auth_service)
+        x_telegram_user_id: str | None = Header(default=None, alias="X-Telegram-User-ID"),
+        auth_service: AuthService = Depends(get_auth_service),
+        user_repo: UserRepository = Depends(get_user_repository)
 ) -> User:
+
+
+    if token == settings.BOT_SECRET_KEY:
+        if not x_telegram_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="X-Telegram-User-ID header is required for bot requests"
+            )
+
+        try:
+            tg_id = int(x_telegram_user_id)
+        except ValueError:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid Telegram ID")
+
+        user = await user_repo.get_by_telegram_id(tg_id)
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with Telegram ID {tg_id} not found. Please start bot first."
+            )
+
+        return user
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -243,11 +270,11 @@ async def get_current_admin_user(
         )
     return user
 
-def get_visitor_repository() -> VisitorRepository:
-    return VisitorRepository(async_session_factory)
-
-def get_chat_repository() -> PriorityModelRepository:
+def get_priority_repository() -> PriorityModelRepository:
     return PriorityModelRepository(async_session_factory)
+
+def get_chat_repository() -> ChatRepository:
+    return ChatRepository(async_session_factory)
 
 def get_llm_repository() -> UniversalLLM:
     return UniversalLLM(async_session_factory)
@@ -255,6 +282,9 @@ def get_llm_repository() -> UniversalLLM:
 def get_image_repository() -> UniversalImageGenerator:
     return UniversalImageGenerator(async_session_factory)
 
-
 def get_s3_uploader(request: Request) -> S3UploaderService:
     return S3UploaderService(request.app.state.s3_client)
+
+
+
+AUTH_DEPENDENCY = Depends(get_current_user)
