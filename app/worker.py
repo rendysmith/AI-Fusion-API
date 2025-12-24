@@ -10,7 +10,6 @@ import aiohttp
 from aiobotocore.session import get_session
 from aiohttp import ClientTimeout
 
-import redis.asyncio as aioredis
 from app.services.redis_publisher import RedisPublisher
 
 from app.database.engine import async_session_factory
@@ -20,7 +19,7 @@ from app.database.repositories.circuit_breaker_repository import CircuitBreakerR
 from app.database.repositories.task_repository import TaskRepository
 from app.database.repositories.user_repository import UserRepository
 from app.exceptions import FatalProviderError, UserValidationError
-from app.services.providers import kie_ai_provider, openai_provider, unifically_provider, grsai_provider
+from app.services.providers import unifically_provider, grsai_provider
 from app.services.s3_uploader import S3UploaderService
 from app.services.telegram_notifier import send_error_alert
 from app.settings import settings

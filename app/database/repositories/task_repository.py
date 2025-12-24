@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import selectinload
 
+from app.database.ai import AiModel
 from app.database.task_models import GenerationTask
 
 
@@ -97,24 +98,31 @@ class TaskRepository:
             user_id: int,
             page: int = 1,
             limit: int = 20,
-            model_name: Optional[str] = None
+            model_name: Optional[str] = None,
+            category: Optional[str] = None
     ) -> Tuple[List[GenerationTask], int]:
 
-        if page < 1:
-            page = 1
-        if limit < 1:
-            limit = 20
+        if page < 1: page = 1
+        if limit < 1: limit = 20
 
         offset = (page - 1) * limit
 
         async with self.session_factory() as session:
 
+
+            stmt_tasks = select(GenerationTask).join(AiModel, GenerationTask.model_slug == AiModel.slug)
+
+
             where_conditions = [GenerationTask.user_id == user_id]
+
             if model_name:
                 where_conditions.append(GenerationTask.model_slug == model_name)
 
+            if category:
+                where_conditions.append(AiModel.category == category)
+
             stmt_tasks = (
-                select(GenerationTask)
+                stmt_tasks
                 .where(*where_conditions)
                 .order_by(desc(GenerationTask.created_at))
                 .offset(offset)
@@ -124,10 +132,8 @@ class TaskRepository:
             result_tasks = await session.execute(stmt_tasks)
             tasks = result_tasks.scalars().all()
 
-            stmt_count = (
-                select(func.count(GenerationTask.id))
-                .where(*where_conditions)
-            )
+            stmt_count = select(func.count(GenerationTask.id)).join(AiModel, GenerationTask.model_slug == AiModel.slug)
+            stmt_count = stmt_count.where(*where_conditions)
 
             result_count = await session.scalar(stmt_count)
             total = result_count or 0

@@ -45,7 +45,13 @@ class UserRepository(BaseRepository):
 
     async def get_by_telegram_id(self, telegram_id: int) -> User | None:
         async with self.session_factory() as session:
-            stmt = select(User).where(User.telegram_id == telegram_id)
+            stmt = (
+                select(User)
+                .where(User.telegram_id == telegram_id)
+                .options(
+                    selectinload(User.subscription).joinedload(UserSubscription.plan)
+                )
+            )
             result = await session.execute(stmt)
             return result.scalars().first()
 
@@ -305,7 +311,7 @@ class UserRepository(BaseRepository):
         Если пользователь уже есть - возвращает ошибку (или существующего).
         """
         async with self.session_factory() as session:
-            # 1. Проверяем, существует ли пользователь
+
             stmt = select(User).where(
                 or_(
                     User.firebase_uid == payload.firebase_uid,
@@ -315,52 +321,59 @@ class UserRepository(BaseRepository):
             existing_user = (await session.execute(stmt)).scalars().first()
 
             if existing_user:
-                # Вариант А: Выбрасываем исключение (рекомендуется для регистрации)
-                raise ValueError("User already exists")
-                # Вариант Б: Возвращаем существующего (но тогда без бонусов)
-                # return existing_user
 
-            # 2. Создаем объект (пока не добавляем в сессию)
+                raise ValueError("User already exists")
+
+
+
             new_user = User(
                 firebase_uid=payload.firebase_uid,
                 email=payload.email,
                 username=payload.username,
                 photo_url=payload.photo_url,
-                registration_method='email',  # Или брать из payload
-                balance=0.0  # Начальный баланс
+                registration_method='email',
+                balance=0.0
             )
 
-            # 3. Логика реферальной системы
+
             if payload.referral_code:
-                # Декодируем код
+
                 referrer_id = HasherRef.decode(payload.referral_code)
 
                 if referrer_id:
-                    # Ищем пригласившего
+
                     ref_stmt = select(User).where(User.id == referrer_id)
                     referrer = (await session.execute(ref_stmt)).scalars().first()
 
-                    # Проверяем условия: реферер есть и не заблокирован
+
                     if referrer and not referrer.is_blocked:
-                        # А. Связываем (кто пригласил нового юзера)
+
                         new_user.referred_by_id = referrer.id
 
-                        # Б. Начисляем 100 кредитов пригласившему
-                        # Используем выражение SQL для атомарности (User.balance + 100)
                         referrer.balance = User.balance + 100
 
-                        # Явно добавляем реферера в сессию для обновления
                         session.add(referrer)
 
-            # 4. Сохраняем нового пользователя
+
             session.add(new_user)
 
             try:
                 await session.commit()
-                # Refresh нужен, чтобы получить сгенерированный ID и created_at
                 await session.refresh(new_user)
             except IntegrityError:
                 await session.rollback()
                 raise ValueError("Database error during registration")
 
             return new_user
+
+    async def get_telegram_ids_paginated(self, limit: int, offset: int) -> list[int]:
+        async with self.session_factory() as session:
+            stmt = (
+                select(User.telegram_id)
+                .where(User.telegram_id.is_not(None))
+                .order_by(User.id)
+                .limit(limit)
+                .offset(offset)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())

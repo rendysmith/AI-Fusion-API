@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import Literal, Optional, Any, Dict
+from typing import Literal, Optional, Any, Dict, List
 
 from pydantic import BaseModel, computed_field, ConfigDict
 
@@ -32,25 +32,29 @@ class AiModelUpdate(BaseModel):
     sort_order: Optional[int] = None
     settings: Optional[Dict[str, Any]] = None
 
+
 class AiModelResponse(AiModelBase):
     id: int
     created_at: datetime
     updated_at: datetime
 
-    @computed_field
-    def pricing(self) -> ModelPricing:
-        settings_data = {}
+    @property
+    def _parsed_settings(self) -> dict:
+        if isinstance(self.settings, dict):
+            return self.settings
         if isinstance(self.settings, str):
             try:
-                settings_data = json.loads(self.settings)
+                return json.loads(self.settings)
             except:
-                pass
-        elif isinstance(self.settings, dict):
-            settings_data = self.settings
+                return {}
+        return {}
+
+    @computed_field
+    def pricing(self) -> ModelPricing:
+        settings_data = self._parsed_settings
 
         base_cost = float(settings_data.get("cost", 0))
         manual_unit = settings_data.get("unit")
-
 
         unit = "generation"
         suffix = "за генерацию"
@@ -70,6 +74,18 @@ class AiModelResponse(AiModelBase):
             unit=unit,
             display_text=f"{base_cost} 💎 {suffix}"
         )
+
+    @computed_field
+    def available_ratios(self) -> List[str]:
+        if self.category not in ["image", "video"]:
+            return []
+
+        settings_data = self._parsed_settings
+
+        if "valid_ratios" in settings_data:
+            return settings_data["valid_ratios"]
+
+        return ["1:1", "16:9", "9:16"]
 
     model_config = ConfigDict(from_attributes=True)
 

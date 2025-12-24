@@ -48,6 +48,7 @@ from app.routers import storage as storage_router
 from app.routers import admin_billing as admin_billing_router
 from app.routers import admin_models as admin_models_router
 from app.routers import text2text_llm as text2text_llm_router
+from app.routers import upload as upload_router
 
 
 import app.database.main_models
@@ -137,6 +138,8 @@ app.include_router(storage_router.router)
 app.include_router(admin_billing_router.admin_router)
 app.include_router(admin_models_router.admin_router)
 app.include_router(text2text_llm_router.router)
+app.include_router(upload_router.router)
+
 
 app.add_middleware(
     CORSMiddleware,

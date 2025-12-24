@@ -1,13 +1,14 @@
 from datetime import datetime
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, HttpUrl
 
 
 class ModelT2T(BaseModel):
     prompt: str
     model: str
     session_id: Optional[int] = None
+    image_urls: List[HttpUrl] = Field(default_factory=list)
 
 
 class ChatSessionCreate(BaseModel):

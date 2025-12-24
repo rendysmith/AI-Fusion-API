@@ -1,3 +1,5 @@
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 
 from app import schemas
@@ -157,6 +159,20 @@ async def add_bulk_credits(
         "failed_count": len(failed_identifiers),
         "failed_identifiers": failed_identifiers
     }
+
+
+@admin_router.get(
+    "/telegram-ids",
+    response_model=List[int],
+    summary="[Admin] Get Telegram IDs with pagination"
+)
+async def get_telegram_ids_paginated(
+    limit: int = Query(1000, ge=1, le=10000),
+    offset: int = Query(0, ge=0),
+    repo: UserRepository = Depends(get_user_repository),
+    _ = Depends(get_current_admin_user)
+):
+    return await repo.get_telegram_ids_paginated(limit, offset)
 
 
 @admin_router.get(

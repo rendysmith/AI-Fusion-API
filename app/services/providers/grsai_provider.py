@@ -174,18 +174,24 @@ async def generate_sora_grsai(
     logger.info(f"TaskID: {task_id} | Grsai Sora Start")
 
 
+    logger.info(f"TaskID: {task_id} | Grsai Sora Params: {params}")
+
+
     prompt = params.get("prompt")
     if not prompt:
         raise ValueError("Prompt is required")
 
-    aspect_ratio = ASPECT_RATIO_MAP.get(params.get("orientation", "landscape"), "16:9")
-    duration = params.get("duration", 10)  # 10 или 15
+    ratio = params.get("aspect_ratio", "16:9")
+    duration = params.get("duration", 10)
+
+
+
 
 
     payload = {
         "model": "sora-2",
         "prompt": prompt,
-        "aspectRatio": aspect_ratio,
+        "aspectRatio": ratio,
         "duration": int(duration),
         "webHook": "-1"
     }
@@ -308,8 +314,8 @@ async def _generate_nano_base(
         "webHook": "-1"
     }
 
-    if params.get("image_url"):
-        payload["urls"] = [params.get("image_url")]
+    if params.get("image_urls"):
+        payload["urls"] = params.get("image_urls")
 
 
     if extra_payload:
@@ -357,7 +363,7 @@ async def generate_nano_banana_grsai(
         params=params,
         task_id=task_id,
         s3_uploader=s3_uploader,
-        api_model_name="nano-banana"
+        api_model_name="nano-banana-fast"
     )
 
 
@@ -371,7 +377,7 @@ async def generate_nano_banana_pro_grsai(
     """
     Функция для Nano Banana PRO (поддерживает imageSize)
     """
-    image_size = params.get("quality", "1K")
+    image_size = params.get("image_size", "1K")
 
     return await _generate_nano_base(
         session=session,

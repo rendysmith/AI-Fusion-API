@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 
 import aiohttp
 from fastapi import APIRouter, Depends, Query, Request, Header, HTTPException
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from starlette import status
 
@@ -42,20 +42,22 @@ async def get_user_generations_history(
         user: User = Depends(get_current_user),
         pagination: PaginationParams = Depends(PaginationParams),
         model_name: Optional[str] = Query(None, description="Фильтр по названию модели"),
+        category: Optional[Literal["image", "video", "text", "audio"]] = Query(None, description="Фильтр по категории (image/video)"),
         task_repo: TaskRepository = Depends(get_task_repository),
 ):
 
 
 
     tasks, total = await task_repo.get_tasks_by_user_id_paginated(
-        user_id=user.id, page=pagination.page, limit=pagination.limit, model_name=model_name
+        user_id=user.id, page=pagination.page, limit=pagination.limit, model_name=model_name, category=category
     )
 
 
     generations_list: List[schemas.GenerationHistoryItem] = []
     for task in tasks:
         params = task.params if isinstance(task.params, dict) else {}
-        result = task.result if isinstance(task.result, dict) else {}
+
+        res_data = task.result if isinstance(task.result, dict) else {}
 
         generations_list.append(
             schemas.GenerationHistoryItem(
@@ -68,8 +70,9 @@ async def get_user_generations_history(
                 parameters=params,
                 result=schemas.GenerationResultModel(
 
-                    videoUrl=result.get("video_url") or result.get("url"),
-                    thumbnailUrl=result.get("video_url")
+                    videoUrl=res_data.get("video_url") or res_data.get("url"),
+                    thumbnailUrl=res_data.get("video_url"),
+                    imageUrl=res_data.get("image_url")
                 )
             )
         )

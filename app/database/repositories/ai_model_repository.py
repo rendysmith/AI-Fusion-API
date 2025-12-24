@@ -1,4 +1,3 @@
-import json
 from sqlalchemy import select, asc
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -27,8 +26,7 @@ class AiModelRepository:
             stmt = (
                 select(AiModel)
                 .where(AiModel.description == description)
-                .order_by(asc(AiModel.sort_order))  # Сортировка по sort_order по возрастанию
-                # Если нужно по убыванию, используйте desc(AiModel.sort_order)
+                .order_by(asc(AiModel.sort_order))
             )
             result = await session.execute(stmt)
             return result.scalars().all()
@@ -41,7 +39,7 @@ class AiModelRepository:
 
     async def get_all_by_category(self, category: Optional[str] = None) -> List[AiModel]:
         async with self.session_factory() as session:
-            stmt = select(AiModel).order_by(asc(AiModel.sort_order))  # (snake_case)
+            stmt = select(AiModel).order_by(asc(AiModel.sort_order))
             if category:
                 stmt = stmt.where(AiModel.category == category)
 

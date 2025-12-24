@@ -120,7 +120,7 @@ class S3UploaderService:
             session=session,
             source_url=source_url,
             task_id=task_id,
-            folder="images",  # Сохраняем в отдельную папку
+            folder="images",
             default_ext=".png",
             default_content_type="image/png"
         )

@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Tuple, Optional, Dict
 
@@ -50,11 +51,12 @@ class UniversalLLM:
 
         return new_client
 
-    async def get_response(self, user_id: int, prompt: str, model_slug: str, session_id: int = None) -> Tuple[
-        str, Optional[int]]:
-        """
-        Главный метод: Сессия -> История -> Роутинг -> Ответ
-        """
+    async def get_response(self,
+                           user_id: int,
+                           prompt: str,
+                           model_slug: str,
+                           session_id: int = None,
+                           image_urls: list[str] = None) -> Tuple[str, Optional[int]]:
 
         chat_repo = ChatRepository(self.async_session_factory)
         priority_repo = PriorityModelRepository(self.async_session_factory)
@@ -75,21 +77,43 @@ class UniversalLLM:
             new_session = await chat_repo.create_session(session_payload)
             current_session_id = new_session.id
 
-        messages = [{"role": "system", "content": "You are a helpful assistant."}]
-
+        messages = []
         if session_id:
             history = await chat_repo.get_messages_by_session_id(current_session_id)
             for msg in history:
                 messages.append({"role": msg.role, "content": msg.message_text})
 
-        messages.append({"role": "user", "content": prompt})
+
+        if image_urls:
+
+            content_payload = [{"type": "text", "text": prompt}]
+
+            for url in image_urls:
+                content_payload.append({
+                    "type": "image_url",
+                    "image_url": {"url": url}
+                })
+
+
+            messages.append({"role": "user", "content": content_payload})
+        else:
+
+            messages.append({"role": "user", "content": prompt})
+
+
+        db_message_text = prompt
+        if image_urls:
+            for url in image_urls:
+                db_message_text += f"\n\n![image]({url})"
 
         await chat_repo.create_message(ChatMessageCreate(
             session_id=current_session_id,
             role='user',
-            message_text=prompt,
+            message_text=db_message_text,
             token_count=len(prompt) // 4
         ))
+
+
 
         providers = await priority_repo.get_by_proveder_all(model_slug)
         if not providers:
@@ -105,11 +129,9 @@ class UniversalLLM:
                 continue
 
             try:
-
                 response = await client.chat.completions.create(
                     model=model_slug,
                     messages=messages,
-                    temperature=0.7
                 )
                 ai_text = response.choices[0].message.content
                 if ai_text:
@@ -130,3 +152,108 @@ class UniversalLLM:
         ))
 
         return ai_text, current_session_id
+
+    async def stream_response(
+            self,
+            user_id: int,
+            prompt: str,
+            model_slug: str,
+            session_id: int = None,
+            image_urls: list[str] = None
+    ):
+
+        chat_repo = ChatRepository(self.async_session_factory)
+        priority_repo = PriorityModelRepository(self.async_session_factory)
+
+        current_session_id = session_id
+        if current_session_id:
+            session_obj = await chat_repo.get_session_by_id(current_session_id)
+            if not session_obj or session_obj.user_id != user_id:
+                current_session_id = None
+
+        if not current_session_id:
+            session_payload = ChatSessionCreate(
+                user_id=user_id,
+                model_slug=model_slug,
+                chat_name=prompt[:40]
+            )
+            new_session = await chat_repo.create_session(session_payload)
+            current_session_id = new_session.id
+
+        messages = []
+        if session_id:
+            history = await chat_repo.get_messages_by_session_id(current_session_id)
+            for msg in history:
+                messages.append({"role": msg.role, "content": msg.message_text})
+
+
+        if image_urls:
+
+            content_payload = [{"type": "text", "text": prompt}]
+            for url in image_urls:
+                content_payload.append({
+                    "type": "image_url",
+                    "image_url": {"url": url}
+                })
+            messages.append({"role": "user", "content": content_payload})
+        else:
+
+            messages.append({"role": "user", "content": prompt})
+
+
+        db_message_text = prompt
+        if image_urls:
+            for url in image_urls:
+                db_message_text += f"\n\n![image]({url})"
+
+        await chat_repo.create_message(ChatMessageCreate(
+            session_id=current_session_id,
+            role='user',
+            message_text=db_message_text
+        ))
+
+        providers = await priority_repo.get_by_proveder_all(model_slug)
+
+        if not providers:
+            yield json.dumps({"error": "No provider"})
+            return
+
+        prov = providers[0]
+        client = await self._get_or_create_client(prov.provider)
+
+        try:
+            stream = await client.chat.completions.create(
+                model=model_slug,
+                messages=messages,
+                stream=True,
+            )
+        except Exception as e:
+            yield json.dumps({"error": str(e)})
+            return
+
+        collected_text = ""
+
+        async for chunk in stream:
+            content = chunk.choices[0].delta.content
+            if content:
+                collected_text += content
+
+                response_data = {
+                    "text": content,
+                    "session_id": current_session_id,
+                    "finished": False
+                }
+                yield json.dumps(response_data) + "\n"
+
+        if collected_text:
+            await chat_repo.create_message(ChatMessageCreate(
+                session_id=current_session_id,
+                role='assistant',
+                message_text=collected_text
+            ))
+
+            yield json.dumps({
+                "text": "",
+                "session_id": current_session_id,
+                "finished": True
+            }) + "\n"
