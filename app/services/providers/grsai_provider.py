@@ -245,7 +245,7 @@ async def generate_veo_grsai(
     if not prompt:
         raise ValueError("Prompt is required")
 
-    aspect_ratio = ASPECT_RATIO_MAP.get(params.get("orientation", "landscape"), "16:9")
+    aspect_ratio = params.get("aspect_ratio", "16:9")
 
 
     api_model = model_name.replace("veo-3-fast", "veo3.1-fast")

@@ -42,7 +42,6 @@ class S3UploaderService:
 
             bucket_name = settings.YANDEX_BUCKET_NAME
 
-            # Формируем путь: folder/task_id.ext
             s3_key = f"{folder}/{task_id}{extension}"
 
             logger.info(f"TaskID: {task_id} | Загружаю в S3 ({len(file_data)} bytes) в {folder}...")
@@ -61,7 +60,6 @@ class S3UploaderService:
 
         except Exception as e:
             logger.error(f"TaskID: {task_id} | Ошибка S3 Proxy: {e}")
-            # Если не удалось загрузить в S3, возвращаем исходный URL, чтобы задача не упала
             return source_url
 
 

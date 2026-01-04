@@ -197,9 +197,7 @@ async def generate_sora_video(session: aiohttp.ClientSession,
     try:
         prompt = params["prompt"]
 
-        aspect_ratio = None
-        if 'orientation' in params:
-            aspect_ratio = orientation_dict.get(params['orientation'], '16:9')
+        aspect_ratio = params.get('aspect_ratio', '16:9')
 
         duration = params.get('duration')
         image_url = params.get('image_url')

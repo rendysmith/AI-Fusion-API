@@ -23,6 +23,7 @@ from app.services.firebase_service import verify_firebase_token
 from app.services.s3_uploader import S3UploaderService
 from app.services.t2i_service import UniversalImageGenerator
 from app.services.t2t_service import UniversalLLM
+from app.services.text_billing_service import TextGenBillingService
 from app.settings import settings
 
 from app.database.repositories.user_repository import UserRepository
@@ -285,6 +286,12 @@ def get_image_repository() -> UniversalImageGenerator:
 def get_s3_uploader(request: Request) -> S3UploaderService:
     return S3UploaderService(request.app.state.s3_client)
 
+
+def get_text_billing_service(
+    user_repo: UserRepository = Depends(get_user_repository),
+    ai_model_repo: AiModelRepository = Depends(get_ai_model_repository)
+) -> TextGenBillingService:
+    return TextGenBillingService(user_repo, ai_model_repo)
 
 
 AUTH_DEPENDENCY = Depends(get_current_user)

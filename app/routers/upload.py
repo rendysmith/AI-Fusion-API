@@ -21,7 +21,6 @@ async def upload_image(
     Принимает картинку (multipart/form-data), грузит в S3 и возвращает URL.
     """
 
-    # 1. Проверка типа
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

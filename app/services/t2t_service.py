@@ -233,27 +233,40 @@ class UniversalLLM:
 
         collected_text = ""
 
-        async for chunk in stream:
-            content = chunk.choices[0].delta.content
-            if content:
-                collected_text += content
+        try:
 
-                response_data = {
-                    "text": content,
+            async for chunk in stream:
+                content = chunk.choices[0].delta.content
+                if content:
+                    collected_text += content
+
+                    response_data = {
+                        "text": content,
+                        "session_id": current_session_id,
+                        "finished": False
+                    }
+                    yield json.dumps(response_data) + "\n"
+
+        except Exception:
+            pass
+
+        finally:
+
+            if collected_text:
+
+                await chat_repo.create_message(ChatMessageCreate(
+                    session_id=current_session_id,
+                    role='assistant',
+                    message_text=collected_text,
+                    token_count=len(collected_text) // 4
+                ))
+
+
+            try:
+                yield json.dumps({
+                    "text": "",
                     "session_id": current_session_id,
-                    "finished": False
-                }
-                yield json.dumps(response_data) + "\n"
-
-        if collected_text:
-            await chat_repo.create_message(ChatMessageCreate(
-                session_id=current_session_id,
-                role='assistant',
-                message_text=collected_text
-            ))
-
-            yield json.dumps({
-                "text": "",
-                "session_id": current_session_id,
-                "finished": True
-            }) + "\n"
+                    "finished": True
+                }) + "\n"
+            except Exception:
+                pass
