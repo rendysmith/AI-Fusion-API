@@ -26,6 +26,7 @@ from app.documentation import API_DESCRIPTION
 from app.schemas import TaskStatusResponse
 from app.services.firebase_service import initialize_firebase
 from app.services.generation_service import GenerationService
+from app.services.scheduler import start_scheduler, shutdown_scheduler
 from app.settings import settings
 
 from app.routers import auth as auth_router
@@ -100,7 +101,13 @@ async def lifespan(app: FastAPI):
                 app.state.http_session = http_session
                 logging.info("Successfully created global aiohttp.ClientSession")
 
+
+                start_scheduler()
+
                 yield
+
+
+                shutdown_scheduler()
 
 
 

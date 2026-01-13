@@ -37,3 +37,4 @@ openai
 litellm
 hashids
 pydantic[email]
+apscheduler

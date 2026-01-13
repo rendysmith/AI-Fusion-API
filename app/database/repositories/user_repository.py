@@ -200,14 +200,13 @@ class UserRepository(BaseRepository):
             return user
 
     async def get_user_active_plan(self, user_id: int) -> Optional[SubscriptionPlan]:
-
         async with self.session_factory() as session:
             stmt = (
                 select(SubscriptionPlan)
                 .join(UserSubscription, UserSubscription.plan_id == SubscriptionPlan.id)
                 .where(
                     UserSubscription.user_id == user_id,
-                    UserSubscription.status == 'active'
+                    UserSubscription.status.in_(['active', 'pending_cancellation'])
                 )
             )
             result = await session.execute(stmt)

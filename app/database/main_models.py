@@ -46,10 +46,9 @@ class User(Base):
         viewonly=True
     )
 
-
     subscription = relationship(
         "UserSubscription",
-        primaryjoin="and_(User.id == UserSubscription.user_id, UserSubscription.status == 'active')",
+        primaryjoin="and_(User.id == UserSubscription.user_id, UserSubscription.status.in_(['active', 'pending_cancellation']))",
         uselist=False
     )
 

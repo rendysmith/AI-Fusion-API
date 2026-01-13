@@ -29,7 +29,7 @@ class SubscriptionRepository:
                 select(UserSubscription)
                 .where(
                     UserSubscription.user_id == user_id,
-                    UserSubscription.status == 'active'
+                    UserSubscription.status.in_(['active', 'pending_cancellation'])
                 )
             )
             result = await session.execute(stmt)
@@ -104,17 +104,14 @@ class SubscriptionRepository:
                 await session.rollback()
 
     async def get_active_subscription_with_plan(self, user_id: int) -> Optional[UserSubscription]:
-
         async with self.session_factory() as session:
             stmt = (
                 select(UserSubscription)
                 .where(
                     UserSubscription.user_id == user_id,
-                    UserSubscription.status == 'active'
+                    UserSubscription.status.in_(['active', 'pending_cancellation'])
                 )
-                .options(
-                    joinedload(UserSubscription.plan)
-                )
+                .options(joinedload(UserSubscription.plan))
             )
             result = await session.execute(stmt)
             return result.scalars().first()
@@ -154,36 +151,70 @@ class SubscriptionRepository:
 
             await session.commit()
 
-
     async def cancel_subscription(self, user_id: int) -> Optional[UserSubscription]:
         async with self.session_factory() as session:
-
             active_sub = await self.get_active_subscription_with_plan(user_id)
 
             if not active_sub or active_sub.plan.slug == 'free':
                 return None
 
-            active_sub.status = "cancelled"
+            now = datetime.now(timezone.utc)
+
+            if active_sub.current_period_end and active_sub.current_period_end > now:
+
+                active_sub.status = "pending_cancellation"
+
+                await session.commit()
+                await session.refresh(active_sub)
+                return active_sub
+
+            else:
+                active_sub.status = "cancelled"
+
+                free_plan = await self.plan_repo.get_by_slug("free")
+                new_free_sub = UserSubscription(
+                    id=f"sub_{user_id}_{int(datetime.now().timestamp())}",
+                    user_id=user_id,
+                    plan_id=free_plan.id,
+                    status='active',
+                    is_manual=True,
+                    current_period_start=now,
+                    current_period_end=now + timedelta(days=365 * 100)
+                )
+                session.add(new_free_sub)
+                await session.commit()
+                return new_free_sub
+
+    async def check_and_downgrade_expired_subs(self):
+        """Ищет просроченные подписки и переводит их на Free"""
+        async with self.session_factory() as session:
+            now = datetime.now(timezone.utc)
+
+
+            stmt = select(UserSubscription).where(
+                UserSubscription.status.in_(['active', 'pending_cancellation']),
+                UserSubscription.current_period_end < now
+            )
+            expired_subs = (await session.execute(stmt)).scalars().all()
 
             free_plan = await self.plan_repo.get_by_slug("free")
             if not free_plan:
-                logging.error(f"Cannot cancel subscription for user {user_id}: 'free' plan not found!")
-                await session.commit()
-                return active_sub
+                return
 
-            new_free_sub = UserSubscription(
-                id=f"sub_{user_id}_{int(datetime.now().timestamp())}",
-                user_id=user_id,
-                plan_id=free_plan.id,
-                status='active',
-                is_manual=True,
-                current_period_start=datetime.now(timezone.utc),
-                current_period_end=datetime.now(timezone.utc) + timedelta(days=365 * 100)
-            )
-            session.add(new_free_sub)
+            for sub in expired_subs:
+
+                sub.status = "expired"
+
+
+                new_free_sub = UserSubscription(
+                    id=f"sub_{sub.user_id}_{int(datetime.now().timestamp())}",
+                    user_id=sub.user_id,
+                    plan_id=free_plan.id,
+                    status='active',
+                    is_manual=True,
+                    current_period_start=now,
+                    current_period_end=now + timedelta(days=365 * 100)
+                )
+                session.add(new_free_sub)
 
             await session.commit()
-
-            await session.refresh(new_free_sub)
-            await session.refresh(new_free_sub, attribute_names=['plan'])
-            return new_free_sub
