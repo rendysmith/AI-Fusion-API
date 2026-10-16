@@ -1,3 +1,5 @@
+"""Text-to-text LLM service for chat completions and streaming."""
+
 import json
 import logging
 from typing import Tuple, Optional, Dict
@@ -14,29 +16,32 @@ logger = logging.getLogger(__name__)
 
 
 class UniversalLLM:
+    """Unified service for text-to-text LLM interactions with multi-provider support."""
+
     _clients: Dict[str, AsyncOpenAI] = {}
 
     def __init__(self, async_session_factory: async_sessionmaker[AsyncSession]):
         self.async_session_factory = async_session_factory
 
-    def _get_provider_config(self, provider_name: str) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Конфигурация провайдеров.
-        Возвращает (API Key, Base URL).
-        """
+    def _get_provider_config(
+        self, provider_name: str,
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Get API key and base URL for a given provider."""
         if provider_name == "Google":
-            return settings.GEMINI_API_KEY, "https://generativelanguage.googleapis.com/v1beta/openai/"
-
+            return (
+                settings.GEMINI_API_KEY,
+                "https://generativelanguage.googleapis.com/v1beta/openai/",
+            )
         elif provider_name == "Grsai":
             return settings.GRSAI_API_KEY, "https://api.grsai.com/v1"
-
         elif provider_name in ["ChatGPT", "OpenAI"]:
             return settings.OPENAI_API_KEY, None
-
         return None, None
 
-    async def _get_or_create_client(self, provider_name: str) -> Optional[AsyncOpenAI]:
-        """Singleton для клиентов (чтобы не пересоздавать подключение)"""
+    async def _get_or_create_client(
+        self, provider_name: str,
+    ) -> Optional[AsyncOpenAI]:
+        """Get or create a cached OpenAI client for a provider."""
         if provider_name in self._clients:
             return self._clients[provider_name]
 
@@ -45,19 +50,23 @@ class UniversalLLM:
         if not api_key:
             return None
 
-        logger.info(f"⚡️ Init OpenAI Client for: {provider_name}")
+        logger.info(f"Init OpenAI Client for: {provider_name}")
         new_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self._clients[provider_name] = new_client
-
         return new_client
 
-    async def get_response(self,
-                           user_id: int,
-                           prompt: str,
-                           model_slug: str,
-                           session_id: int = None,
-                           image_urls: list[str] = None) -> Tuple[str, Optional[int]]:
+    async def get_response(
+        self,
+        user_id: int,
+        prompt: str,
+        model_slug: str,
+        session_id: int = None,
+        image_urls: list[str] = None,
+    ) -> Tuple[str, Optional[int]]:
+        """Send a prompt to the LLM and return the response text.
 
+        Returns (response_text, session_id).
+        """
         chat_repo = ChatRepository(self.async_session_factory)
         priority_repo = PriorityModelRepository(self.async_session_factory)
 
@@ -72,7 +81,7 @@ class UniversalLLM:
             session_payload = ChatSessionCreate(
                 user_id=user_id,
                 model_slug=model_slug,
-                chat_name=prompt[:40]
+                chat_name=prompt[:40],
             )
             new_session = await chat_repo.create_session(session_payload)
             current_session_id = new_session.id
@@ -83,23 +92,16 @@ class UniversalLLM:
             for msg in history:
                 messages.append({"role": msg.role, "content": msg.message_text})
 
-
         if image_urls:
-
             content_payload = [{"type": "text", "text": prompt}]
-
             for url in image_urls:
                 content_payload.append({
                     "type": "image_url",
-                    "image_url": {"url": url}
+                    "image_url": {"url": url},
                 })
-
-
             messages.append({"role": "user", "content": content_payload})
         else:
-
             messages.append({"role": "user", "content": prompt})
-
 
         db_message_text = prompt
         if image_urls:
@@ -108,16 +110,14 @@ class UniversalLLM:
 
         await chat_repo.create_message(ChatMessageCreate(
             session_id=current_session_id,
-            role='user',
+            role="user",
             message_text=db_message_text,
-            token_count=len(prompt) // 4
+            token_count=len(prompt) // 4,
         ))
-
-
 
         providers = await priority_repo.get_by_proveder_all(model_slug)
         if not providers:
-            return "Ошибка: Провайдеры для модели не настроены.", current_session_id
+            return "Error: No providers configured for this model.", current_session_id
 
         ai_text = None
 
@@ -136,32 +136,33 @@ class UniversalLLM:
                 ai_text = response.choices[0].message.content
                 if ai_text:
                     break
-
             except Exception as e:
-                logger.warning(f"⚠️ Provider {provider_name} failed: {e}. Switching...")
+                logger.warning(
+                    f"Provider {provider_name} failed: {e}. Switching...",
+                )
                 continue
 
         if not ai_text:
-            return "Извините, все сервисы временно недоступны.", current_session_id
+            return "Sorry, all services are temporarily unavailable.", current_session_id
 
         await chat_repo.create_message(ChatMessageCreate(
             session_id=current_session_id,
-            role='assistant',
+            role="assistant",
             message_text=ai_text,
-            token_count=len(ai_text) // 4
+            token_count=len(ai_text) // 4,
         ))
 
         return ai_text, current_session_id
 
     async def stream_response(
-            self,
-            user_id: int,
-            prompt: str,
-            model_slug: str,
-            session_id: int = None,
-            image_urls: list[str] = None
+        self,
+        user_id: int,
+        prompt: str,
+        model_slug: str,
+        session_id: int = None,
+        image_urls: list[str] = None,
     ):
-
+        """Stream a response from the LLM, yielding JSON chunks."""
         chat_repo = ChatRepository(self.async_session_factory)
         priority_repo = PriorityModelRepository(self.async_session_factory)
 
@@ -175,7 +176,7 @@ class UniversalLLM:
             session_payload = ChatSessionCreate(
                 user_id=user_id,
                 model_slug=model_slug,
-                chat_name=prompt[:40]
+                chat_name=prompt[:40],
             )
             new_session = await chat_repo.create_session(session_payload)
             current_session_id = new_session.id
@@ -186,20 +187,16 @@ class UniversalLLM:
             for msg in history:
                 messages.append({"role": msg.role, "content": msg.message_text})
 
-
         if image_urls:
-
             content_payload = [{"type": "text", "text": prompt}]
             for url in image_urls:
                 content_payload.append({
                     "type": "image_url",
-                    "image_url": {"url": url}
+                    "image_url": {"url": url},
                 })
             messages.append({"role": "user", "content": content_payload})
         else:
-
             messages.append({"role": "user", "content": prompt})
-
 
         db_message_text = prompt
         if image_urls:
@@ -208,8 +205,8 @@ class UniversalLLM:
 
         await chat_repo.create_message(ChatMessageCreate(
             session_id=current_session_id,
-            role='user',
-            message_text=db_message_text
+            role="user",
+            message_text=db_message_text,
         ))
 
         providers = await priority_repo.get_by_proveder_all(model_slug)
@@ -234,16 +231,14 @@ class UniversalLLM:
         collected_text = ""
 
         try:
-
             async for chunk in stream:
                 content = chunk.choices[0].delta.content
                 if content:
                     collected_text += content
-
                     response_data = {
                         "text": content,
                         "session_id": current_session_id,
-                        "finished": False
+                        "finished": False,
                     }
                     yield json.dumps(response_data) + "\n"
 
@@ -251,22 +246,19 @@ class UniversalLLM:
             pass
 
         finally:
-
             if collected_text:
-
                 await chat_repo.create_message(ChatMessageCreate(
                     session_id=current_session_id,
-                    role='assistant',
+                    role="assistant",
                     message_text=collected_text,
-                    token_count=len(collected_text) // 4
+                    token_count=len(collected_text) // 4,
                 ))
-
 
             try:
                 yield json.dumps({
                     "text": "",
                     "session_id": current_session_id,
-                    "finished": True
+                    "finished": True,
                 }) + "\n"
             except Exception:
                 pass

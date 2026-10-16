@@ -1,26 +1,28 @@
+"""Referral system Pydantic schemas."""
+
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from decimal import Decimal
 
 
-# То, что приходит от фронтенда
 class UserRegisterRequest(BaseModel):
+    """Request to register a new user with optional referral code."""
+
     firebase_uid: str = Field(..., description="UID из Firebase")
     email: Optional[EmailStr] = None
     username: Optional[str] = None
     photo_url: Optional[str] = None
-
-    # Реферальный код (может быть null, если юзер пришел сам)
     referral_code: Optional[str] = None
 
 
-# То, что отдаем обратно
 class UserResponse(BaseModel):
+    """User response with referral code."""
+
     id: int
     email: Optional[str]
     username: Optional[str]
     balance: Decimal
-    referral_code: Optional[str]  # Вычисляемое поле
+    referral_code: Optional[str]
 
     class Config:
-        from_attributes = True  # В старых версиях Pydantic это orm_mode = True
+        from_attributes = True

@@ -1,10 +1,16 @@
-from sqlalchemy import String, Column, Integer, Text, func, DateTime, Boolean
+"""AI model and backend priority database models."""
+
+from sqlalchemy import (
+    String, Column, Integer, Text, func, DateTime, Boolean,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 
 from app.database.base import Base
 
 
 class AiModel(Base):
+    """Registered AI model with pricing, availability and metadata."""
+
     __tablename__ = "ai_models"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -19,11 +25,20 @@ class AiModel(Base):
     icon_url = Column(String(255), nullable=True)
     sort_order = Column(Integer, default=0)
     settings = Column(JSONB, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
 
 class PriorityModel(Base):
+    """Backend provider priority configuration for model routing."""
+
     __tablename__ = "ai_model_backends"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -33,5 +48,12 @@ class PriorityModel(Base):
     provider = Column(String(50), nullable=False)
     category = Column(String(50), nullable=True)
     sort_priority = Column(Integer, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

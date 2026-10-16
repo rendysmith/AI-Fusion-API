@@ -1,23 +1,19 @@
+"""FastAPI dependency injection providers."""
+
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
 from typing import Any, AsyncGenerator
 
 import aiohttp
 import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, Security, Request, status, Header
 from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
-from sqlalchemy import update, select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app import schemas
 from app.database.main_models import User
 from app.database.engine import async_session_factory
 from app.database.repositories.chat_repository import ChatRepository
 from app.database.repositories.priority_model_repository import PriorityModelRepository
 from app.database.repositories.system_repository import SystemRepository
-from app.database.subscription_models import UserSubscription, SubscriptionPlan
 from app.services.auth_service import AuthService
 from app.services.firebase_service import verify_firebase_token
 from app.services.s3_uploader import S3UploaderService
@@ -44,133 +40,149 @@ from app.database.repositories.metric_repository import VisitorRepository
 from app.services.billing_service import BillingService
 from app.services.getcourse_service import GetCourseService
 
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 api_key_header = APIKeyHeader(name="Authorization", auto_error=False)
 
 
 def get_http_session(request: Request) -> aiohttp.ClientSession:
-    """Достает "вечный" ClientSession из app.state."""
+    """Get the global aiohttp ClientSession from app state."""
     return request.app.state.http_session
 
 
 def get_redis_client() -> aioredis.Redis:
-    """Возвращает 'сырой' redis-клиент (мы его не создавали в 'state')"""
-
+    """Get a Redis client from the shared connection pool."""
     from app.database.redis_db import redis_pool
     return aioredis.Redis(connection_pool=redis_pool)
 
 
 async def check_bot_secret_key(header: str = Security(api_key_header)):
-    """Проверяет, что запрос пришел от нашего бота (по Bearer токену)."""
+    """Verify that the request comes from our bot using Bearer token."""
     if not header:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Authorization Header"
+            detail="Missing Authorization Header",
         )
     if header == f"Bearer {settings.BOT_SECRET_KEY}":
         return True
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="Invalid or missing bot secret key"
+        detail="Invalid or missing bot secret key",
     )
 
 
-
-
 def get_user_repository() -> UserRepository:
+    """Get a UserRepository instance."""
     return UserRepository(async_session_factory)
 
 
 def get_task_repository() -> TaskRepository:
+    """Get a TaskRepository instance."""
     return TaskRepository(async_session_factory)
 
 
 def get_analytics_repository() -> AnalyticsRepository:
+    """Get an AnalyticsRepository instance."""
     return AnalyticsRepository(async_session_factory)
 
 
 async def get_async_session() -> AsyncGenerator[Any, Any]:
-
+    """Get an async database session."""
     async with async_session_factory() as session:
         yield session
 
+
 def get_subscription_plan_repository() -> SubscriptionPlanRepository:
+    """Get a SubscriptionPlanRepository instance."""
     return SubscriptionPlanRepository(async_session_factory)
 
 
 def get_subscription_repository(
-        plan_repo: SubscriptionPlanRepository = Depends(get_subscription_plan_repository)
+    plan_repo: SubscriptionPlanRepository = Depends(get_subscription_plan_repository),
 ) -> SubscriptionRepository:
+    """Get a SubscriptionRepository instance."""
     return SubscriptionRepository(
         session_factory=async_session_factory,
-        plan_repo=plan_repo
+        plan_repo=plan_repo,
     )
 
 
 def get_telegram_token_repository() -> TelegramTokenRepository:
+    """Get a TelegramTokenRepository instance."""
     return TelegramTokenRepository(async_session_factory)
 
+
 def get_visitor_repository() -> VisitorRepository:
+    """Get a VisitorRepository instance."""
     return VisitorRepository(async_session_factory)
 
+
 def get_qr_session_repository(
-        redis_client: aioredis.Redis = Depends(get_redis_client)
+    redis_client: aioredis.Redis = Depends(get_redis_client),
 ) -> QrSessionRepository:
+    """Get a QrSessionRepository instance."""
     return QrSessionRepository(redis_client)
 
 
 def get_circuit_breaker_repository(
-        redis_client: aioredis.Redis = Depends(get_redis_client)
+    redis_client: aioredis.Redis = Depends(get_redis_client),
 ) -> CircuitBreakerRepository:
+    """Get a CircuitBreakerRepository instance."""
     return CircuitBreakerRepository(redis_client)
 
 
 def get_ai_model_repository() -> AiModelRepository:
+    """Get an AiModelRepository instance."""
     return AiModelRepository(async_session_factory)
 
 
 def get_template_repository() -> TemplateRepository:
+    """Get a TemplateRepository instance."""
     return TemplateRepository(async_session_factory)
 
 
 def get_plan_access_repository() -> PlanAccessRepository:
+    """Get a PlanAccessRepository instance."""
     return PlanAccessRepository(async_session_factory)
 
 
 def get_billing_repository() -> BillingRepository:
+    """Get a BillingRepository instance."""
     return BillingRepository(async_session_factory)
 
 
 def get_product_repository() -> ProductRepository:
+    """Get a ProductRepository instance."""
     return ProductRepository(async_session_factory)
 
 
 def get_system_repository(
-        redis_client: aioredis.Redis = Depends(get_redis_client)
+    redis_client: aioredis.Redis = Depends(get_redis_client),
 ) -> SystemRepository:
+    """Get a SystemRepository instance."""
     return SystemRepository(redis_client)
 
 
 def get_billing_service(
-        user_repo: UserRepository = Depends(get_user_repository),
-        sub_repo: SubscriptionRepository = Depends(get_subscription_repository)
+    user_repo: UserRepository = Depends(get_user_repository),
+    sub_repo: SubscriptionRepository = Depends(get_subscription_repository),
 ) -> BillingService:
+    """Get a BillingService instance."""
     return BillingService(user_repo=user_repo, sub_repo=sub_repo)
 
 
 def get_getcourse_service(
-        request: Request,
-        billing_repo: BillingRepository = Depends(get_billing_repository),
-        billing_service: BillingService = Depends(get_billing_service)
+    request: Request,
+    billing_repo: BillingRepository = Depends(get_billing_repository),
+    billing_service: BillingService = Depends(get_billing_service),
 ) -> GetCourseService:
+    """Get a GetCourseService instance."""
     if not settings.GETCOURSE_API_KEY or not settings.GETCOURSE_ACCOUNT_NAME:
         logging.warning("GetCourse .env vars not set. Checkout will fail.")
 
         return GetCourseService(
             api_key="dummy", account_name="dummy",
             admin_email="dummy", client=request.app.state.http_session,
-            billing_repo=billing_repo, billing_service=billing_service
+            billing_repo=billing_repo, billing_service=billing_service,
         )
 
     return GetCourseService(
@@ -179,30 +191,30 @@ def get_getcourse_service(
         admin_email=settings.GETCOURSE_ADMIN_EMAIL,
         client=request.app.state.http_session,
         billing_repo=billing_repo,
-        billing_service=billing_service
+        billing_service=billing_service,
     )
 
 
 def get_auth_service(
     user_repo=Depends(get_user_repository),
-    plan_repo=Depends(get_subscription_plan_repository)
+    plan_repo=Depends(get_subscription_plan_repository),
 ) -> AuthService:
+    """Get an AuthService instance."""
     return AuthService(user_repo, plan_repo)
 
 
 async def get_current_user(
-        token: str = Depends(oauth2_scheme),
-        x_telegram_user_id: str | None = Header(default=None, alias="X-Telegram-User-ID"),
-        auth_service: AuthService = Depends(get_auth_service),
-        user_repo: UserRepository = Depends(get_user_repository)
+    token: str = Depends(oauth2_scheme),
+    x_telegram_user_id: str | None = Header(default=None, alias="X-Telegram-User-ID"),
+    auth_service: AuthService = Depends(get_auth_service),
+    user_repo: UserRepository = Depends(get_user_repository),
 ) -> User:
-
-
+    """Authenticate and return the current user from Firebase token or bot key."""
     if token == settings.BOT_SECRET_KEY:
         if not x_telegram_user_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="X-Telegram-User-ID header is required for bot requests"
+                detail="X-Telegram-User-ID header is required for bot requests",
             )
 
         try:
@@ -215,7 +227,10 @@ async def get_current_user(
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"User with Telegram ID {tg_id} not found. Please start bot first."
+                detail=(
+                    f"User with Telegram ID {tg_id} not found. "
+                    f"Please start bot first."
+                ),
             )
 
         return user
@@ -238,14 +253,13 @@ async def get_current_user(
         sign_in_provider = decoded_token.get("firebase", {}).get("sign_in_provider")
 
         is_trusted_provider = (
-                is_email_verified or
-                sign_in_provider in ['google.com', 'apple.com']
+            is_email_verified or sign_in_provider in ["google.com", "apple.com"]
         )
 
         user = await auth_service.get_or_create_user(
             firebase_uid=firebase_uid,
             email=email,
-            is_trusted=is_trusted_provider
+            is_trusted=is_trusted_provider,
         )
 
         if not user:
@@ -259,38 +273,47 @@ async def get_current_user(
 
 
 async def get_current_admin_user(
-        user: User = Depends(get_current_user)
+    user: User = Depends(get_current_user),
 ) -> User:
-    """
-    "Охранник" админки. Проверяет, что у юзера есть флаг 'is_admin'.
-    """
+    """Verify that the current user has admin privileges."""
     if not user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access forbidden: requires admin privileges."
+            detail="Access forbidden: requires admin privileges.",
         )
     return user
 
+
 def get_priority_repository() -> PriorityModelRepository:
+    """Get a PriorityModelRepository instance."""
     return PriorityModelRepository(async_session_factory)
 
+
 def get_chat_repository() -> ChatRepository:
+    """Get a ChatRepository instance."""
     return ChatRepository(async_session_factory)
 
+
 def get_llm_repository() -> UniversalLLM:
+    """Get a UniversalLLM instance."""
     return UniversalLLM(async_session_factory)
 
+
 def get_image_repository() -> UniversalImageGenerator:
+    """Get a UniversalImageGenerator instance."""
     return UniversalImageGenerator(async_session_factory)
 
+
 def get_s3_uploader(request: Request) -> S3UploaderService:
+    """Get an S3UploaderService instance."""
     return S3UploaderService(request.app.state.s3_client)
 
 
 def get_text_billing_service(
     user_repo: UserRepository = Depends(get_user_repository),
-    ai_model_repo: AiModelRepository = Depends(get_ai_model_repository)
+    ai_model_repo: AiModelRepository = Depends(get_ai_model_repository),
 ) -> TextGenBillingService:
+    """Get a TextGenBillingService instance."""
     return TextGenBillingService(user_repo, ai_model_repo)
 
 

@@ -1,0 +1,1 @@
+"""Viralix backend application package."""

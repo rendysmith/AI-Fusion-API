@@ -1,16 +1,17 @@
+"""Admin user traffic source Pydantic schemas."""
+
 from datetime import datetime
 from typing import Optional, List
-
 from pydantic import BaseModel, ConfigDict
 
 
 class UserTrafficSourceResponse(BaseModel):
+    """User traffic source information."""
+
     user_id: int
     email: Optional[str] = None
     username: Optional[str] = None
     created_at: datetime
-
-
     utm_source: Optional[str] = None
     utm_medium: Optional[str] = None
     utm_campaign: Optional[str] = None
@@ -21,6 +22,8 @@ class UserTrafficSourceResponse(BaseModel):
 
 
 class UserTrafficListResponse(BaseModel):
+    """Paginated user traffic source list."""
+
     items: List[UserTrafficSourceResponse]
     total: int
     page: int

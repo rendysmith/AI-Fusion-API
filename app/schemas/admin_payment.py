@@ -1,16 +1,19 @@
+"""Admin payment listing Pydantic schemas."""
+
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 
 
 class AdminPaymentItem(BaseModel):
+    """Single payment item for admin view."""
+
     internal_id: str
     amount: float
     currency: str
     status: str
     provider: str
     created_at: datetime
-
     user_email: Optional[str] = None
     user_id: int
     product_name: Optional[str] = None
@@ -19,6 +22,8 @@ class AdminPaymentItem(BaseModel):
 
 
 class AdminPaymentListResponse(BaseModel):
+    """Paginated admin payment list."""
+
     items: List[AdminPaymentItem]
     total: int
     page: int

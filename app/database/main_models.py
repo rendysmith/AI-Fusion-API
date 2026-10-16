@@ -1,4 +1,9 @@
-from sqlalchemy import Column, String, Float, BigInteger, DECIMAL, Boolean, Integer, DateTime, func, ForeignKey
+"""Core user and authentication models."""
+
+from sqlalchemy import (
+    Column, String, Float, BigInteger, DECIMAL, Boolean, Integer,
+    DateTime, func, ForeignKey,
+)
 from sqlalchemy.orm import relationship
 
 from app.database.base import Base
@@ -6,6 +11,8 @@ from app.services.referral_service import HasherRef
 
 
 class User(Base):
+    """Application user with authentication, billing and referral support."""
+
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -16,7 +23,7 @@ class User(Base):
     photo_url = Column(String(255), nullable=True)
     telegram_id = Column(BigInteger, unique=True, index=True, nullable=True)
 
-    registration_method = Column(String(20), nullable=False, default='unknown')
+    registration_method = Column(String(20), nullable=False, default="unknown")
 
     coefficient = Column(Float, default=1.0, nullable=False)
     balance = Column(DECIMAL(precision=15, scale=6), default=0.0, nullable=False)
@@ -27,61 +34,71 @@ class User(Base):
     referred_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     created_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
     )
-
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
-        nullable=False
+        nullable=False,
     )
 
     visitor_info = relationship(
         "Visitor",
         primaryjoin="foreign(Visitor.user_id) == User.id",
         uselist=False,
-        viewonly=True
+        viewonly=True,
     )
 
     subscription = relationship(
         "UserSubscription",
-        primaryjoin="and_(User.id == UserSubscription.user_id, UserSubscription.status.in_(['active', 'pending_cancellation']))",
-        uselist=False
+        primaryjoin=(
+            "and_(User.id == UserSubscription.user_id, "
+            "UserSubscription.status.in_(['active', 'pending_cancellation']))"
+        ),
+        uselist=False,
     )
 
-    referrer = relationship(
-        "User",
-        remote_side=[id])
+    referrer = relationship("User", remote_side=[id])
 
     @property
     def referral_code(self) -> str | None:
-
+        """Generate a referral code from the user's ID."""
         if self.id is None:
             return None
-
         return HasherRef.encode(self.id)
 
 
 class TelegramAuthToken(Base):
+    """One-time token for Telegram authentication flow."""
+
     __tablename__ = "telegram_auth_tokens"
 
     token = Column(String(100), primary_key=True)
-    firebase_uid = Column(String(128), ForeignKey("users.firebase_uid"), index=True, nullable=False)
+    firebase_uid = Column(
+        String(128), ForeignKey("users.firebase_uid"), index=True, nullable=False,
+    )
     expires_at = Column(DateTime(timezone=True), nullable=False)
 
-    status = Column(String(20), default='pending', nullable=False, index=True)
+    status = Column(String(20), default="pending", nullable=False, index=True)
 
     telegram_id = Column(BigInteger, nullable=True)
     telegram_username = Column(String(100), nullable=True)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
 
 class Price(Base):
+    """Pricing record for AI model usage."""
+
     __tablename__ = "prices"
 
     model_name = Column(String(50), primary_key=True, index=True)

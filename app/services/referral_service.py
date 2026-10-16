@@ -1,25 +1,33 @@
+"""Referral code encoding/decoding service using Hashids."""
+
 from hashids import Hashids
 import os
 
-# Лучше брать из переменных окружения
-REFERRAL_SALT = os.getenv("REFERRAL_SALT", "super_secret_random_string_salt_for_your_project_2024")
+REFERRAL_SALT = os.getenv(
+    "REFERRAL_SALT",
+    "super_secret_random_string_salt_for_your_project_2024",
+)
 MIN_LENGTH = 8
 
-# Инициализируем один раз на уровне модуля
 _hasher = Hashids(salt=REFERRAL_SALT, min_length=MIN_LENGTH)
 
+
 class HasherRef:
+    """Hashids-based referral code encoder/decoder.
+
+    This is synchronous — Hashids CPU time is negligible for the event loop.
     """
-    Убираем async. Hashids работает в CPU, блокировка event loop ничтожна.
-    """
+
     @staticmethod
     def encode(user_id: int) -> str | None:
+        """Encode a user ID into a referral code string."""
         if user_id is None:
             return None
         return _hasher.encode(user_id)
 
     @staticmethod
     def decode(code: str) -> int | None:
+        """Decode a referral code string back to a user ID."""
         try:
             decoded = _hasher.decode(code)
             if decoded:

@@ -1,3 +1,5 @@
+"""FastAPI application entry point with lifespan management."""
+
 import json
 import logging
 
@@ -5,7 +7,6 @@ import aiohttp
 from aiobotocore.session import get_session
 from fastapi import FastAPI, Depends, HTTPException, Request
 from contextlib import asynccontextmanager
-
 
 from starlette import status
 from starlette.middleware.cors import CORSMiddleware
@@ -51,24 +52,20 @@ from app.routers import admin_models as admin_models_router
 from app.routers import text2text_llm as text2text_llm_router
 from app.routers import upload as upload_router
 
-
 import app.database.main_models
 import app.database.analytics_models
 import app.database.task_models
 import app.database.billing_models
 
-
-
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - [WORKER] - %(message)s'
+    format="%(asctime)s - %(levelname)s - [WORKER] - %(message)s",
 )
-
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
+    """Application lifespan: initialize services on startup, clean up on shutdown."""
     initialize_firebase()
 
     async with engine.begin() as conn:
@@ -77,23 +74,21 @@ async def lifespan(app: FastAPI):
     session = get_session()
 
     async with session.create_client(
-            's3',
-            region_name=settings.YANDEX_REGION,
-            endpoint_url=settings.YANDEX_STORAGE_ENDPOINT,
-            aws_access_key_id=settings.YANDEX_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.YANDEX_SECRET_ACCESS_KEY
+        "s3",
+        region_name=settings.YANDEX_REGION,
+        endpoint_url=settings.YANDEX_STORAGE_ENDPOINT,
+        aws_access_key_id=settings.YANDEX_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.YANDEX_SECRET_ACCESS_KEY,
     ) as s3_client:
-
         app.state.s3_client = s3_client
 
         async with session.create_client(
-                'sqs',
-                region_name=settings.YANDEX_QUEUE_REGION,
-                endpoint_url=settings.YANDEX_QUEUE_ENDPOINT,
-                aws_access_key_id=settings.YANDEX_SQS_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.YANDEX_SQS_SECRET_ACCESS_KEY
+            "sqs",
+            region_name=settings.YANDEX_QUEUE_REGION,
+            endpoint_url=settings.YANDEX_QUEUE_ENDPOINT,
+            aws_access_key_id=settings.YANDEX_SQS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.YANDEX_SQS_SECRET_ACCESS_KEY,
         ) as sqs_client:
-
             app.state.sqs_client = sqs_client
             logging.info("Successfully connected to Yandex Message Queue")
 
@@ -101,24 +96,19 @@ async def lifespan(app: FastAPI):
                 app.state.http_session = http_session
                 logging.info("Successfully created global aiohttp.ClientSession")
 
-
                 start_scheduler()
 
                 yield
 
-
                 shutdown_scheduler()
-
-
 
 
 app = FastAPI(
     title=settings.APP_TITLE,
     version=settings.APP_VERSION,
     description=API_DESCRIPTION,
-    lifespan=lifespan
+    lifespan=lifespan,
 )
-
 
 app.include_router(auth_router.router)
 app.include_router(user_router.router)
@@ -147,7 +137,6 @@ app.include_router(admin_models_router.admin_router)
 app.include_router(text2text_llm_router.router)
 app.include_router(upload_router.router)
 
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -161,50 +150,61 @@ app.add_middleware(
 async def get_task_status(
     task_id: str,
     task_repo: TaskRepository = Depends(dependencies.get_task_repository),
-    user: User = AUTH_DEPENDENCY
+    user: User = AUTH_DEPENDENCY,
 ):
-
-
+    """Get the status of a generation task by its ID."""
     task = await task_repo.get_task(task_id)
 
-
     if not task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found",
+        )
 
     if task.user_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to access this task"
+            detail="You do not have permission to access this task",
         )
 
     return TaskStatusResponse(
         task_id=task.id,
         status=task.status,
         result=task.result,
-        error=task.error
+        error=task.error,
     )
 
 
-@app.post("/generate", response_model=schemas.GenerateAcceptedResponse, status_code=status.HTTP_202_ACCEPTED,
-          tags=["Core Logic"])
+@app.post(
+    "/generate",
+    response_model=schemas.GenerateAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["Core Logic"],
+)
 async def generate(
-        request_data: schemas.GenerateRequest,
-        request: Request,
-        user: User = AUTH_DEPENDENCY,
-        ai_model_repo: AiModelRepository = Depends(dependencies.get_ai_model_repository),
-        user_repo: UserRepository = Depends(dependencies.get_user_repository),
-        task_repo: TaskRepository = Depends(dependencies.get_task_repository),
-        plan_access_repo: PlanAccessRepository = Depends(dependencies.get_plan_access_repository),
-        system_repo: SystemRepository = Depends(dependencies.get_system_repository)
+    request_data: schemas.GenerateRequest,
+    request: Request,
+    user: User = AUTH_DEPENDENCY,
+    ai_model_repo: AiModelRepository = Depends(
+        dependencies.get_ai_model_repository,
+    ),
+    user_repo: UserRepository = Depends(dependencies.get_user_repository),
+    task_repo: TaskRepository = Depends(dependencies.get_task_repository),
+    plan_access_repo: PlanAccessRepository = Depends(
+        dependencies.get_plan_access_repository,
+    ),
+    system_repo: SystemRepository = Depends(
+        dependencies.get_system_repository,
+    ),
 ):
+    """Submit a new generation task for processing."""
     is_maintenance, maint_message = await system_repo.is_maintenance_mode()
 
     if is_maintenance:
-
         if not user.is_admin:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=maint_message
+                detail=maint_message,
             )
 
     s3_client = request.app.state.s3_client
@@ -215,44 +215,47 @@ async def generate(
         user_repo=user_repo,
         s3_client=s3_client,
         task_repo=task_repo,
-        plan_access_repo=plan_access_repo
+        plan_access_repo=plan_access_repo,
     )
 
-    task_id, task_message_body, new_balance = await service.prepare_generation_task(request_data.params)
+    task_id, task_message_body, new_balance = (
+        await service.prepare_generation_task(request_data.params)
+    )
 
     sqs_client = app.state.sqs_client
 
     await sqs_client.send_message(
         QueueUrl=settings.YANDEX_QUEUE_URL,
-        MessageBody=json.dumps(task_message_body, default=str)
+        MessageBody=json.dumps(task_message_body, default=str),
     )
 
     return schemas.GenerateAcceptedResponse(
         task_id=task_id,
-        balance=float(new_balance)
+        balance=float(new_balance),
     )
-
 
 
 @app.get("/docs/elements", response_class=HTMLResponse, include_in_schema=False)
 async def get_elements_docs():
+    """Serve the Stoplight Elements API documentation page."""
     return """
     <!doctype html>
     <html lang="en">
       <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Main API V3</title>
-        <script src="https://unpkg.com/@stoplight/elements/web-components.min.js"></script>
-        <link rel="stylesheet" href="https://unpkg.com/@stoplight/elements/styles.min.css">
+        <script src="https://unpkg.com/@stoplight/elements/web-components.min.js">
+        </script>
+        <link rel="stylesheet"
+              href="https://unpkg.com/@stoplight/elements/styles.min.css">
       </head>
       <body>
         <elements-api
-          apiDescriptionUrl="/openapi.json" 
+          apiDescriptionUrl="/openapi.json"
           router="hash"
           layout="sidebar"
         />
       </body>
     </html>
 """
-

@@ -1,8 +1,9 @@
+"""Generation task data access repository."""
+
 from datetime import datetime
 from typing import Optional, Dict, Any, Tuple, List
 from sqlalchemy import select, update, func, desc, delete
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
-
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import selectinload
 
@@ -11,22 +12,23 @@ from app.database.task_models import GenerationTask
 
 
 class TaskRepository:
+    """Repository for GenerationTask model operations."""
+
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self.session_factory = session_factory
 
     async def get_task(self, task_id: str) -> Optional[GenerationTask]:
-
+        """Get a task by its ID."""
         async with self.session_factory() as session:
             return await session.get(GenerationTask, task_id)
 
     async def upsert_and_start_task(
-            self,
-            task_data: Dict[str, Any],
-            worker_id: str
+        self,
+        task_data: Dict[str, Any],
+        worker_id: str,
     ) -> Optional[GenerationTask]:
-
+        """Create or update a task and mark it as processing."""
         async with self.session_factory() as session:
-
             insert_values = {
                 "id": task_data["_id"],
                 "user_id": task_data["user_id"],
@@ -38,31 +40,29 @@ class TaskRepository:
                 "status": "processing",
                 "processed_by": worker_id,
                 "result": None,
-                "error": None
+                "error": None,
             }
-
 
             stmt = pg_insert(GenerationTask).values(**insert_values)
 
             on_conflict_stmt = stmt.on_conflict_do_update(
-                index_elements=['id'],
+                index_elements=["id"],
                 set_={
                     "status": "processing",
                     "processed_by": worker_id,
                     "result": None,
                     "error": None,
-                    "updated_at": func.now()
-                }
+                    "updated_at": func.now(),
+                },
             )
 
             await session.execute(on_conflict_stmt)
             await session.commit()
 
-
             return await self.get_task(task_data["_id"])
 
     async def complete_task(self, task_id: str, result_data: Dict[str, Any]):
-
+        """Mark a task as completed with result data."""
         async with self.session_factory() as session:
             stmt = (
                 update(GenerationTask)
@@ -71,14 +71,14 @@ class TaskRepository:
                     status="completed",
                     result=result_data,
                     error=None,
-                    updated_at=func.now()
+                    updated_at=func.now(),
                 )
             )
             await session.execute(stmt)
             await session.commit()
 
     async def fail_task(self, task_id: str, error_message: str):
-
+        """Mark a task as failed with error message."""
         async with self.session_factory() as session:
             stmt = (
                 update(GenerationTask)
@@ -87,31 +87,32 @@ class TaskRepository:
                     status="failed",
                     error=error_message,
                     result=None,
-                    updated_at=func.now()
+                    updated_at=func.now(),
                 )
             )
             await session.execute(stmt)
             await session.commit()
 
     async def get_tasks_by_user_id_paginated(
-            self,
-            user_id: int,
-            page: int = 1,
-            limit: int = 20,
-            model_name: Optional[str] = None,
-            category: Optional[str] = None
+        self,
+        user_id: int,
+        page: int = 1,
+        limit: int = 20,
+        model_name: Optional[str] = None,
+        category: Optional[str] = None,
     ) -> Tuple[List[GenerationTask], int]:
-
-        if page < 1: page = 1
-        if limit < 1: limit = 20
+        """Get paginated tasks for a user with optional filters."""
+        if page < 1:
+            page = 1
+        if limit < 1:
+            limit = 20
 
         offset = (page - 1) * limit
 
         async with self.session_factory() as session:
-
-
-            stmt_tasks = select(GenerationTask).join(AiModel, GenerationTask.model_slug == AiModel.slug)
-
+            stmt_tasks = select(GenerationTask).join(
+                AiModel, GenerationTask.model_slug == AiModel.slug,
+            )
 
             where_conditions = [GenerationTask.user_id == user_id]
 
@@ -132,8 +133,11 @@ class TaskRepository:
             result_tasks = await session.execute(stmt_tasks)
             tasks = result_tasks.scalars().all()
 
-            stmt_count = select(func.count(GenerationTask.id)).join(AiModel, GenerationTask.model_slug == AiModel.slug)
-            stmt_count = stmt_count.where(*where_conditions)
+            stmt_count = (
+                select(func.count(GenerationTask.id))
+                .join(AiModel, GenerationTask.model_slug == AiModel.slug)
+                .where(*where_conditions)
+            )
 
             result_count = await session.scalar(stmt_count)
             total = result_count or 0
@@ -141,10 +145,10 @@ class TaskRepository:
             return tasks, total
 
     async def create_pending_task(
-            self, task_id: str, user_id: int, model_slug: str,
-            cost: float, prime_cost: float, params: dict, created_at: datetime
+        self, task_id: str, user_id: int, model_slug: str,
+        cost: float, prime_cost: float, params: dict, created_at: datetime,
     ):
-
+        """Create a new task in pending status."""
         async with self.session_factory() as session:
             stmt = pg_insert(GenerationTask).values(
                 id=task_id,
@@ -154,49 +158,47 @@ class TaskRepository:
                 prime_cost=prime_cost,
                 params=params,
                 created_at=created_at,
-                status="pending" 
+                status="pending",
             )
-
 
             stmt_with_conflict = stmt.on_conflict_do_nothing()
             await session.execute(stmt_with_conflict)
             await session.commit()
 
     async def get_processing_task_count(self, user_id: int) -> int:
-
+        """Count currently processing tasks for a user."""
         async with self.session_factory() as session:
             stmt = (
                 select(func.count(GenerationTask.id))
                 .where(
                     GenerationTask.user_id == user_id,
-                    GenerationTask.status == 'processing'
+                    GenerationTask.status == "processing",
                 )
             )
             count = await session.scalar(stmt)
             return count or 0
 
     async def get_tasks_count_since(self, user_id: int, since_datetime: datetime) -> int:
-
+        """Count completed tasks for a user since a given datetime."""
         async with self.session_factory() as session:
             stmt = (
                 select(func.count(GenerationTask.id))
                 .where(
                     GenerationTask.user_id == user_id,
-                    GenerationTask.status == 'completed',
-                    GenerationTask.created_at >= since_datetime
+                    GenerationTask.status == "completed",
+                    GenerationTask.created_at >= since_datetime,
                 )
             )
             count = await session.scalar(stmt)
             return count or 0
 
     async def get_all_paginated(
-            self, page: int, limit: int, status: Optional[str] = None
+        self, page: int, limit: int, status: Optional[str] = None,
     ) -> Tuple[List[GenerationTask], int]:
-
+        """Get paginated tasks across all users."""
         offset = (page - 1) * limit
 
         async with self.session_factory() as session:
-
             stmt_tasks = select(GenerationTask)
 
             where_conditions = []
@@ -204,17 +206,15 @@ class TaskRepository:
                 where_conditions.append(GenerationTask.status == status)
 
             stmt_tasks = (
-                stmt_tasks.where(*where_conditions)
+                stmt_tasks
+                .where(*where_conditions)
                 .order_by(GenerationTask.created_at.desc())
                 .offset(offset)
                 .limit(limit)
-                .options(
-                    selectinload(GenerationTask.user)
-                )
+                .options(selectinload(GenerationTask.user))
             )
             result_tasks = await session.execute(stmt_tasks)
             tasks = result_tasks.scalars().unique().all()
-
 
             stmt_count = select(func.count(GenerationTask.id)).where(*where_conditions)
             total = (await session.scalar(stmt_count)) or 0
@@ -222,6 +222,7 @@ class TaskRepository:
             return tasks, total
 
     async def get_task_with_user(self, task_id: str) -> Optional[GenerationTask]:
+        """Get a task with its user relationship loaded."""
         async with self.session_factory() as session:
             stmt = (
                 select(GenerationTask)
@@ -232,16 +233,12 @@ class TaskRepository:
             return result.scalars().first()
 
     async def delete_user_task(self, task_id: str, user_id: int) -> bool:
-
+        """Delete a task belonging to a specific user."""
         async with self.session_factory() as session:
             stmt = (
                 delete(GenerationTask)
-                .where(
-                    GenerationTask.id == task_id,
-                    GenerationTask.user_id == user_id
-                )
+                .where(GenerationTask.id == task_id, GenerationTask.user_id == user_id)
             )
             result = await session.execute(stmt)
             await session.commit()
-
             return result.rowcount > 0

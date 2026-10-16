@@ -1,8 +1,9 @@
+"""Generation task request/response Pydantic schemas."""
+
 from datetime import datetime
 from typing import List, Literal, Optional, Any, Annotated, Union, Dict
 from pydantic import BaseModel, Field, model_validator
 from .common import BaseModelParams, PromptMixin
-
 
 GrsaiAspectRatio = Literal[
     "auto",
@@ -11,79 +12,81 @@ GrsaiAspectRatio = Literal[
     "4:3", "3:4",
     "3:2", "2:3",
     "5:4", "4:5",
-    "21:9"
+    "21:9",
 ]
 
 
 class Sora2Params(BaseModelParams, PromptMixin):
+    """Parameters for Sora-2 video generation."""
+
     model_name: Literal["sora-2"]
 
-
-    aspect_ratio: Literal["16:9", "9:16"] = Field("16:9", description="Соотношение сторон")
+    aspect_ratio: Literal["16:9", "9:16"] = Field(
+        "16:9", description="Соотношение сторон",
+    )
 
     duration: Literal[10, 15] = Field(10, description="Длительность видео")
 
     image_url: str | None = Field(None)
 
-
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def normalize_orientation(cls, data: Any) -> Any:
+        """Normalize orientation/ratio fields to aspect_ratio."""
         if isinstance(data, dict):
-
-            if 'orientation' in data and 'aspect_ratio' not in data:
-                orientation = data.pop('orientation')
-
-
-                if orientation == 'portrait':
-                    data['aspect_ratio'] = '9:16'
+            if "orientation" in data and "aspect_ratio" not in data:
+                orientation = data.pop("orientation")
+                if orientation == "portrait":
+                    data["aspect_ratio"] = "9:16"
                 else:
-                    data['aspect_ratio'] = '16:9'
-
-
-            elif 'ratio' in data and 'aspect_ratio' not in data:
-
-                data['aspect_ratio'] = data.pop('ratio').replace('_', ':')
-
+                    data["aspect_ratio"] = "16:9"
+            elif "ratio" in data and "aspect_ratio" not in data:
+                data["aspect_ratio"] = data.pop("ratio").replace("_", ":")
         return data
 
 
-
 class Veo3QualityParams(BaseModelParams, PromptMixin):
+    """Parameters for Veo-3 quality video generation."""
+
     model_name: Literal["veo-3-quality"]
-    image_url: Optional[str] = Field(None, description='...')
+    image_url: Optional[str] = Field(None, description="...")
     translate: bool = False
-    aspect_ratio: Optional[Literal["16:9", "9:16"]] = Field(None, description="...")
+    aspect_ratio: Optional[Literal["16:9", "9:16"]] = Field(
+        None, description="...",
+    )
+
 
 class Veo3FastParams(BaseModelParams, PromptMixin):
+    """Parameters for Veo-3 fast video generation."""
+
     model_name: Literal["veo-3-fast"]
-    image_url: Optional[str] = Field(None, description='...')
+    image_url: Optional[str] = Field(None, description="...")
     translate: bool = False
-    aspect_ratio: Optional[Literal["16:9", "9:16"]] = Field(None, description="...")
+    aspect_ratio: Optional[Literal["16:9", "9:16"]] = Field(
+        None, description="...",
+    )
 
 
 class NanoBanana(BaseModelParams, PromptMixin):
+    """Parameters for Nano Banana image generation."""
+
     model_name: Literal["nano-banana"]
     image_urls: List[str] = Field(default_factory=list, max_length=3)
-
     aspect_ratio: GrsaiAspectRatio = Field(
-        "auto",
-        description="Соотношение сторон итогового изображения."
+        "auto", description="Соотношение сторон итогового изображения.",
     )
 
 
 class NanoBananaPro(BaseModelParams, PromptMixin):
+    """Parameters for Nano Banana Pro high-res image generation."""
+
     model_name: Literal["nano-banana-pro"]
     image_urls: List[str] = Field(default_factory=list, max_length=3)
-
     image_size: Literal["1K", "2K", "4K"] = Field(
-        "1K",
-        description="Разрешение итогового изображения."
+        "1K", description="Разрешение итогового изображения.",
     )
-
     aspect_ratio: GrsaiAspectRatio = Field(
-        "auto",
-        description="Соотношение сторон итогового изображения."
+        "auto", description="Соотношение сторон итогового изображения.",
     )
 
 
@@ -93,36 +96,53 @@ AnyModelParams = Annotated[
         Veo3FastParams,
         Veo3QualityParams,
         NanoBanana,
-        NanoBananaPro
+        NanoBananaPro,
     ],
-    Field(discriminator="model_name")
+    Field(discriminator="model_name"),
 ]
 
+
 class GenerateRequest(BaseModel):
+    """Request to start a new generation task."""
+
     params: AnyModelParams
 
+
 class GenerateAcceptedResponse(BaseModel):
+    """Response after a generation task is accepted."""
+
     message: str = "Task accepted for processing"
     task_id: str
     balance: float
 
+
 TaskStatus = Literal["pending", "processing", "completed", "failed"]
 
+
 class TaskStatusResponse(BaseModel):
+    """Status of a generation task."""
+
     task_id: str
     status: TaskStatus
     result: Optional[Any] = None
     error: Optional[str] = None
     created_at: Optional[datetime] = None
+
     class Config:
         from_attributes = True
 
+
 class GenerationResultModel(BaseModel):
+    """Result URLs from a completed generation."""
+
     videoUrl: Optional[str] = None
     thumbnailUrl: Optional[str] = None
     imageUrl: Optional[str] = None
 
+
 class GenerationHistoryItem(BaseModel):
+    """Single item in generation history."""
+
     task_id: str
     prompt: Optional[str] = None
     model: str
@@ -132,7 +152,10 @@ class GenerationHistoryItem(BaseModel):
     parameters: Optional[Dict[str, Any]] = None
     result: Optional[GenerationResultModel] = None
 
+
 class GenerationHistoryResponse(BaseModel):
+    """Paginated generation history response."""
+
     generations: List[GenerationHistoryItem]
     total: int
     page: int

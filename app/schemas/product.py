@@ -1,9 +1,13 @@
+"""Product CRUD Pydantic schemas."""
+
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, Dict, Any
 
 
 class ProductBase(BaseModel):
+    """Base product fields."""
+
     name: str
     description: Optional[str] = None
     price: int
@@ -14,10 +18,16 @@ class ProductBase(BaseModel):
     is_active: bool = True
     sort_order: int = 0
 
+
 class ProductCreate(ProductBase):
+    """Request to create a product."""
+
     pass
 
+
 class ProductUpdate(BaseModel):
+    """Request to update a product."""
+
     name: Optional[str] = None
     description: Optional[str] = None
     price: Optional[int] = None
@@ -28,7 +38,10 @@ class ProductUpdate(BaseModel):
     is_active: Optional[bool] = None
     sort_order: Optional[int] = None
 
+
 class ProductResponse(ProductBase):
+    """Product response with timestamps."""
+
     id: int
     created_at: datetime
     updated_at: datetime

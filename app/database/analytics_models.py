@@ -1,11 +1,18 @@
-from sqlalchemy import Column, Integer, String, Date, Float, UniqueConstraint, DateTime, func, ForeignKey
+"""Analytics and reporting database models."""
+
+from sqlalchemy import (
+    Column, Integer, String, Date, Float, UniqueConstraint, DateTime,
+    func, ForeignKey,
+)
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.database.base import Base
 
 
 class DailySystemStats(Base):
-    __tablename__ = 'daily_system_stats'
+    """Aggregated daily system statistics."""
+
+    __tablename__ = "daily_system_stats"
 
     date = Column(Date, primary_key=True)
     tasks_completed = Column(Integer, nullable=False, default=0)
@@ -15,7 +22,9 @@ class DailySystemStats(Base):
 
 
 class UserModelStats(Base):
-    __tablename__ = 'user_model_stats'
+    """Per-user per-model usage statistics."""
+
+    __tablename__ = "user_model_stats"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -23,29 +32,32 @@ class UserModelStats(Base):
     total_tasks_completed = Column(Integer, nullable=False, default=0)
     total_spending = Column(Float, nullable=False, default=0.0)
 
-
     __table_args__ = (
-        UniqueConstraint('user_id', 'model_slug', name='uq_user_model_stats'),
+        UniqueConstraint("user_id", "model_slug", name="uq_user_model_stats"),
     )
 
 
 class CompletedTaskLog(Base):
-    __tablename__ = 'completed_task_log'
+    """Log entry for each completed generation task."""
+
+    __tablename__ = "completed_task_log"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     task_mongo_id = Column(String(36), index=True, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     model_slug = Column(String(100), index=True, nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True,
+    )
     cost = Column(Float, nullable=False)
     prime_cost = Column(Float, nullable=False)
 
 
 class Prompts(Base):
-    __tablename__ = 'prompts'
+    """Stored prompts for analytics and reuse."""
+
+    __tablename__ = "prompts"
 
     prompt_id = Column(Integer, primary_key=True, autoincrement=True)
     prompt = Column(String, index=True, nullable=False)
     guid = Column(UUID(as_uuid=True), index=True, nullable=False)
-
-

@@ -1,3 +1,5 @@
+"""Authentication service for Firebase-based user management."""
+
 import logging
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, update
@@ -9,11 +11,16 @@ logger = logging.getLogger(__name__)
 
 
 class AuthService:
+    """Service for handling Firebase authentication and user creation."""
+
     def __init__(self, user_repo, plan_repo):
         self.user_repo = user_repo
         self.plan_repo = plan_repo
 
-    async def get_or_create_user(self, firebase_uid: str, email: str, is_trusted: bool) -> User:
+    async def get_or_create_user(
+        self, firebase_uid: str, email: str, is_trusted: bool,
+    ) -> User:
+        """Get existing user or create a new one with optional free plan."""
         user = await self.user_repo.get_by_firebase_uid(firebase_uid)
 
         if not user:
@@ -27,31 +34,39 @@ class AuthService:
         return user
 
     async def _create_user_entry(self, firebase_uid: str, email: str):
-
+        """Create a minimal user entry in the database."""
         async with self.user_repo.session_factory() as session:
             async with session.begin():
                 stmt = pg_insert(User).values(
                     firebase_uid=firebase_uid,
-                    email=email
+                    email=email,
                 ).on_conflict_do_nothing()
                 await session.execute(stmt)
 
     async def _grant_free_plan(self, user: User):
+        """Assign the free plan to a trusted user."""
         logger.info(f"Granting FREE plan to trusted user {user.id}...")
         async with self.user_repo.session_factory() as session:
             async with session.begin():
-                stmt_find_plan = select(SubscriptionPlan).where(SubscriptionPlan.slug == "free")
-                free_plan = (await session.execute(stmt_find_plan)).scalar_one_or_none()
+                stmt_find_plan = select(SubscriptionPlan).where(
+                    SubscriptionPlan.slug == "free",
+                )
+                free_plan = (
+                    await session.execute(stmt_find_plan)
+                ).scalar_one_or_none()
 
                 if free_plan:
-                    sub_id = f"sub_{user.firebase_uid}_{int(datetime.now().timestamp())}"
+                    sub_id = (
+                        f"sub_{user.firebase_uid}_{int(datetime.now().timestamp())}"
+                    )
                     new_sub = UserSubscription(
                         id=sub_id,
                         user_id=user.id,
                         plan_id=free_plan.id,
-                        status='active',
+                        status="active",
                         is_manual=True,
-                        current_period_end=datetime.now(timezone.utc) + timedelta(days=365 * 100)
+                        current_period_end=datetime.now(timezone.utc)
+                        + timedelta(days=365 * 100),
                     )
                     session.add(new_sub)
 
@@ -59,5 +74,5 @@ class AuthService:
                         await session.execute(
                             update(User)
                             .where(User.id == user.id)
-                            .values(balance=free_plan.credits_granted)
+                            .values(balance=free_plan.credits_granted),
                         )

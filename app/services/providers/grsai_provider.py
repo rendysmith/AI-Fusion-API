@@ -1,3 +1,5 @@
+"""GrsAI provider for video and image generation."""
+
 import asyncio
 import logging
 import json
@@ -12,7 +14,6 @@ from app.services.s3_uploader import S3UploaderService
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 GRSAI_BASE_URL: Final[str] = "https://api.grsai.com"
 GRSAI_SORA_PATH: Final[str] = "/v1/video/sora-video"
 GRSAI_VEO_PATH: Final[str] = "/v1/video/veo"
@@ -23,77 +24,78 @@ POLLING_INTERVAL: Final[int] = 20
 POLLING_TIMEOUT: Final[int] = 900
 
 
-ASPECT_RATIO_MAP = {
-    'landscape': '16:9',
-    'portrait': '9:16',
-    'square': '1:1'
-}
-
-MODELS_API_MAP = {
-    'veo-3-fast': 'veo3.1-fast',
-    'veo-3-quality': 'veo3.1-pro'
-}
-
-
 class GrsaiError(Exception):
-    """Кастомная ошибка для провайдера Grsai."""
+    """Custom error for Grsai provider."""
+
     pass
 
 
 async def _make_request(
-        session: aiohttp.ClientSession,
-        method: str,
-        url: str,
-        payload: dict = None
+    session: aiohttp.ClientSession,
+    method: str,
+    url: str,
+    payload: dict = None,
 ) -> dict:
+    """Make an HTTP request to the Grsai API with error handling."""
     headers = {
-        'Authorization': f'Bearer {settings.GRSAI_API_KEY}',
-        'Content-Type': 'application/json'
+        "Authorization": f"Bearer {settings.GRSAI_API_KEY}",
+        "Content-Type": "application/json",
     }
 
     try:
         if method == "POST":
-            async with session.post(url, json=payload, headers=headers, ssl=False) as resp:
+            async with session.post(
+                url, json=payload, headers=headers, ssl=False,
+            ) as resp:
                 resp_text = await resp.text()
 
                 if resp.status == 400:
-                    raise UserValidationError(f"GrsAI 400 Bad Request: {resp_text}")
-
+                    raise UserValidationError(
+                        f"GrsAI 400 Bad Request: {resp_text}",
+                    )
                 if resp.status in [401, 403]:
-                    raise FatalProviderError(f"GrsAI Auth Error ({resp.status}): {resp_text}")
-
+                    raise FatalProviderError(
+                        f"GrsAI Auth Error ({resp.status}): {resp_text}",
+                    )
                 if resp.status >= 500:
-                    raise FatalProviderError(f"GrsAI Server Error ({resp.status}): {resp_text}")
-
+                    raise FatalProviderError(
+                        f"GrsAI Server Error ({resp.status}): {resp_text}",
+                    )
                 if resp.status != 200:
-                    raise FatalProviderError(f"GrsAI Unknown Error ({resp.status}): {resp_text}")
+                    raise FatalProviderError(
+                        f"GrsAI Unknown Error ({resp.status}): {resp_text}",
+                    )
 
                 return json.loads(resp_text)
 
         elif method == "GET":
-
-            async with session.get(url, params=payload, headers=headers, ssl=False) as resp:
+            async with session.get(
+                url, params=payload, headers=headers, ssl=False,
+            ) as resp:
                 resp_text = await resp.text()
 
                 if resp.status == 400:
-                    raise UserValidationError(f"GrsAI 400 Bad Request: {resp_text}")
+                    raise UserValidationError(
+                        f"GrsAI 400 Bad Request: {resp_text}",
+                    )
                 if resp.status >= 500:
-                    raise FatalProviderError(f"GrsAI Server Error ({resp.status}): {resp_text}")
-
+                    raise FatalProviderError(
+                        f"GrsAI Server Error ({resp.status}): {resp_text}",
+                    )
                 if resp.status != 200:
-                    raise FatalProviderError(f"GrsAI Error ({resp.status}): {resp_text}")
+                    raise FatalProviderError(
+                        f"GrsAI Error ({resp.status}): {resp_text}",
+                    )
                 return json.loads(resp_text)
 
     except aiohttp.ClientError as e:
         raise FatalProviderError(f"GrsAI Network Error: {e}") from e
 
 
-
-async def _poll_result(session: aiohttp.ClientSession, task_id: str, model_type: str) -> str:
-    """
-    Опрашивает статус задачи, пока не получит результат или ошибку.
-    model_type: 'sora' или 'veo' (нужно для парсинга ответа, так как они чуть отличаются)
-    """
+async def _poll_result(
+    session: aiohttp.ClientSession, task_id: str, model_type: str,
+) -> str:
+    """Poll for task result until completion or timeout."""
     url = f"{GRSAI_BASE_URL}{GRSAI_RESULT_PATH}"
     payload = {"id": task_id}
 
@@ -105,11 +107,11 @@ async def _poll_result(session: aiohttp.ClientSession, task_id: str, model_type:
 
         data = await _make_request(session, "POST", url, payload)
 
-
-
         if data.get("code") != 0:
-
-            logger.warning(f"Grsai Poll Warning: {data.get('msg')} (Code {data.get('code')})")
+            logger.warning(
+                f"Grsai Poll Warning: {data.get('msg')} "
+                f"(Code {data.get('code')})",
+            )
             await asyncio.sleep(POLLING_INTERVAL)
             continue
 
@@ -117,65 +119,48 @@ async def _poll_result(session: aiohttp.ClientSession, task_id: str, model_type:
         status = result_data.get("status")
 
         if status == "succeeded":
-
-            if model_type == 'sora':
-
+            if model_type in ("sora", "nano_banana"):
                 results = result_data.get("results", [])
                 if results and len(results) > 0:
                     return results[0].get("url")
-
-
-            elif model_type == 'nano_banana':
-                results = result_data.get("results", [])
-                if results and len(results) > 0:
-                    return results[0].get("url")
-
-            elif model_type == 'veo':
-
+            elif model_type == "veo":
                 return result_data.get("url")
 
-            raise GrsaiError(f"Статус succeeded, но URL видео не найден в ответе: {result_data}")
+            raise GrsaiError(
+                f"Status succeeded but URL not found: {result_data}",
+            )
 
         elif status == "failed":
             reason = result_data.get("failure_reason")
             error_msg = result_data.get("error", "Unknown error")
-
             error_lower = error_msg.lower()
 
             user_fault_keywords = [
-                "violation", "violate",
-                "moderation",
-                "sensitive",
-                "safety",
-                "policy", "policies",
-                "nsfw",
-                "filter",
-                'processing_error'
+                "violation", "moderation", "sensitive",
+                "safety", "policy", "nsfw", "filter", "processing_error",
             ]
             if any(word in error_lower for word in user_fault_keywords):
-                raise UserValidationError(f"GrsAI Safety Policy: {error_msg}")
+                raise UserValidationError(
+                    f"GrsAI Safety Policy: {error_msg}",
+                )
 
-
-            raise FatalProviderError(f"GrsAI Generation Failed: {reason} - {error_msg}")
-
+            raise FatalProviderError(
+                f"GrsAI Generation Failed: {reason} - {error_msg}",
+            )
 
         await asyncio.sleep(POLLING_INTERVAL)
 
 
-
 async def generate_sora_grsai(
-        session: aiohttp.ClientSession,
-        params: dict,
-        task_id: str,
-        s3_uploader: S3UploaderService,
-        model_name: str = "sora-2",
-        **kwargs
+    session: aiohttp.ClientSession,
+    params: dict,
+    task_id: str,
+    s3_uploader: S3UploaderService,
+    model_name: str = "sora-2",
+    **kwargs,
 ) -> dict:
+    """Generate a Sora video via GrsAI provider."""
     logger.info(f"TaskID: {task_id} | Grsai Sora Start")
-
-
-    logger.info(f"TaskID: {task_id} | Grsai Sora Params: {params}")
-
 
     prompt = params.get("prompt")
     if not prompt:
@@ -184,61 +169,56 @@ async def generate_sora_grsai(
     ratio = params.get("aspect_ratio", "16:9")
     duration = params.get("duration", 10)
 
-
-
-
-
     payload = {
         "model": "sora-2",
         "prompt": prompt,
         "aspectRatio": ratio,
         "duration": int(duration),
-        "webHook": "-1"
+        "webHook": "-1",
     }
 
     if params.get("image_url"):
         payload["url"] = params.get("image_url")
 
     try:
-
         url = f"{GRSAI_BASE_URL}{GRSAI_SORA_PATH}"
         resp_json = await _make_request(session, "POST", url, payload)
-
 
         provider_task_id = resp_json.get("data", {}).get("id")
         if not provider_task_id:
             raise GrsaiError(f"No task ID in response: {resp_json}")
 
-        logger.info(f"TaskID: {task_id} | Grsai Task ID: {provider_task_id}")
+        logger.info(
+            f"TaskID: {task_id} | Grsai Task ID: {provider_task_id}",
+        )
 
-
-        video_url = await _poll_result(session, provider_task_id, model_type='sora')
-
+        video_url = await _poll_result(
+            session, provider_task_id, model_type="sora",
+        )
 
         final_url = await s3_uploader.download_and_upload_video(
             session=session,
             source_url=video_url,
-            task_id=task_id
+            task_id=task_id,
         )
 
         return {"video_url": final_url}
 
     except (UserValidationError, FatalProviderError):
         raise
-
     except Exception as e:
         raise FatalProviderError(f"GrsAI Unexpected Error: {e}") from e
 
 
-
 async def generate_veo_grsai(
-        session: aiohttp.ClientSession,
-        params: dict,
-        task_id: str,
-        s3_uploader: S3UploaderService,
-        model_name: str = "veo-3-fast",
-        **kwargs
+    session: aiohttp.ClientSession,
+    params: dict,
+    task_id: str,
+    s3_uploader: S3UploaderService,
+    model_name: str = "veo-3-fast",
+    **kwargs,
 ) -> dict:
+    """Generate a Veo video via GrsAI provider."""
     logger.info(f"TaskID: {task_id} | Grsai Veo Start ({model_name})")
 
     prompt = params.get("prompt")
@@ -247,16 +227,14 @@ async def generate_veo_grsai(
 
     aspect_ratio = params.get("aspect_ratio", "16:9")
 
-
     api_model = model_name.replace("veo-3-fast", "veo3.1-fast")
 
     payload = {
         "model": api_model,
         "prompt": prompt,
         "aspectRatio": aspect_ratio,
-        "webHook": "-1"
+        "webHook": "-1",
     }
-
 
     if params.get("image_url"):
         payload["firstFrameUrl"] = params.get("image_url")
@@ -271,52 +249,54 @@ async def generate_veo_grsai(
         if not provider_task_id:
             raise GrsaiError(f"No task ID in response: {resp_json}")
 
-        logger.info(f"TaskID: {task_id} | Grsai Veo Task ID: {provider_task_id}")
+        logger.info(
+            f"TaskID: {task_id} | Grsai Veo Task ID: {provider_task_id}",
+        )
 
-        video_url = await _poll_result(session, provider_task_id, model_type='veo')
+        video_url = await _poll_result(
+            session, provider_task_id, model_type="veo",
+        )
 
         final_url = await s3_uploader.download_and_upload_video(
             session=session,
             source_url=video_url,
-            task_id=task_id
+            task_id=task_id,
         )
 
         return {"video_url": final_url}
 
-
     except (UserValidationError, FatalProviderError):
         raise
-
     except Exception as e:
         raise FatalProviderError(f"GrsAI Unexpected Error: {e}") from e
 
 
 async def _generate_nano_base(
-        session: aiohttp.ClientSession,
-        params: dict,
-        task_id: str,
-        s3_uploader: S3UploaderService,
-        api_model_name: str,
-        extra_payload: dict = None
+    session: aiohttp.ClientSession,
+    params: dict,
+    task_id: str,
+    s3_uploader: S3UploaderService,
+    api_model_name: str,
+    extra_payload: dict = None,
 ) -> dict:
+    """Base function for Nano Banana image generation."""
     logger.info(f"TaskID: {task_id} | Grsai {api_model_name} Start")
 
     prompt = params.get("prompt")
     if not prompt:
         raise UserValidationError("Prompt is required")
 
-    aspect_ratio = params.get("aspect_ratio", 'auto')
+    aspect_ratio = params.get("aspect_ratio", "auto")
 
     payload = {
         "model": api_model_name,
         "prompt": prompt,
         "aspectRatio": aspect_ratio,
-        "webHook": "-1"
+        "webHook": "-1",
     }
 
     if params.get("image_urls"):
         payload["urls"] = params.get("image_urls")
-
 
     if extra_payload:
         payload.update(extra_payload)
@@ -329,54 +309,55 @@ async def _generate_nano_base(
         if not provider_task_id:
             raise FatalProviderError(f"No task ID in response: {resp_json}")
 
-        logger.info(f"TaskID: {task_id} | Grsai Task ID: {provider_task_id}")
+        logger.info(
+            f"TaskID: {task_id} | Grsai Task ID: {provider_task_id}",
+        )
 
-        image_url = await _poll_result(session, provider_task_id, model_type='nano_banana')
+        image_url = await _poll_result(
+            session, provider_task_id, model_type="nano_banana",
+        )
 
         final_url = await s3_uploader.download_and_upload_image(
             session=session,
             source_url=image_url,
-            task_id=task_id
+            task_id=task_id,
         )
-
 
         return {"image_url": final_url}
 
     except (UserValidationError, FatalProviderError):
         raise
     except Exception as e:
-        raise FatalProviderError(f"GrsAI {api_model_name} Unexpected Error: {e}") from e
+        raise FatalProviderError(
+            f"GrsAI {api_model_name} Unexpected Error: {e}",
+        ) from e
 
 
 async def generate_nano_banana_grsai(
-        session: aiohttp.ClientSession,
-        params: dict,
-        task_id: str,
-        s3_uploader: S3UploaderService,
-        **kwargs
+    session: aiohttp.ClientSession,
+    params: dict,
+    task_id: str,
+    s3_uploader: S3UploaderService,
+    **kwargs,
 ) -> dict:
-    """
-    Функция для обычной Nano Banana
-    """
+    """Generate a Nano Banana image via GrsAI."""
     return await _generate_nano_base(
         session=session,
         params=params,
         task_id=task_id,
         s3_uploader=s3_uploader,
-        api_model_name="nano-banana-fast"
+        api_model_name="nano-banana-fast",
     )
 
 
 async def generate_nano_banana_pro_grsai(
-        session: aiohttp.ClientSession,
-        params: dict,
-        task_id: str,
-        s3_uploader: S3UploaderService,
-        **kwargs
+    session: aiohttp.ClientSession,
+    params: dict,
+    task_id: str,
+    s3_uploader: S3UploaderService,
+    **kwargs,
 ) -> dict:
-    """
-    Функция для Nano Banana PRO (поддерживает imageSize)
-    """
+    """Generate a Nano Banana Pro image via GrsAI."""
     image_size = params.get("image_size", "1K")
 
     return await _generate_nano_base(
@@ -385,77 +366,5 @@ async def generate_nano_banana_pro_grsai(
         task_id=task_id,
         s3_uploader=s3_uploader,
         api_model_name="nano-banana-pro",
-        extra_payload={"imageSize": image_size}
+        extra_payload={"imageSize": image_size},
     )
-
-
-if __name__ == "__main__":
-    from aiobotocore.session import get_session
-
-
-    async def manual_run():
-        print("🚀 Запуск теста GRSAI Provider...")
-
-        # 1. Создаем реальный S3 клиент (как в main.py)
-        session_s3 = get_session()
-        async with session_s3.create_client(
-                's3',
-                region_name=settings.YANDEX_REGION,
-                endpoint_url=settings.YANDEX_STORAGE_ENDPOINT,
-                aws_access_key_id=settings.YANDEX_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.YANDEX_SECRET_ACCESS_KEY
-        ) as s3_client:
-
-            # 2. Инициализируем сервисы
-            uploader = S3UploaderService(s3_client)
-
-            async with aiohttp.ClientSession() as http_session:
-
-                # --- ТЕСТ 1: SORA 2 ---
-                print("\n🎥 [1/2] Тестируем Sora-2...")
-                sora_params = {
-                    "prompt": "A cinematic drone shot of a futuristic cyberpunk city with neon lights, 8k",
-                    "orientation": "landscape",
-                    "duration": 10
-                }
-                sora_task_id = "test_grsai_sora_001"
-
-                try:
-                    result = await generate_sora_grsai(
-                        session=http_session,
-                        params=sora_params,
-                        task_id=sora_task_id,
-                        s3_uploader=uploader
-                    )
-                    print(f"✅ SORA SUCCESS! URL: {result['video_url']}")
-                except Exception as e:
-                    print(f"❌ SORA FAILED: {e}")
-
-                # --- ТЕСТ 2: VEO 3 ---
-                # print("\n🎥 [2/2] Тестируем Veo-3...")
-                # veo_params = {
-                #     "prompt": "A cute cat playing with a ball on green grass, realistic",
-                #     "orientation": "landscape",
-                #     # "image_url": "https://..." # Можно раскомментировать для теста image-to-video
-                # }
-                # veo_task_id = "test_grsai_veo_001"
-                #
-                # try:
-                #
-                #     result = await generate_veo_grsai(
-                #         session=http_session,
-                #         params=veo_params,
-                #         task_id=veo_task_id,
-                #         s3_uploader=uploader,
-                #         model_name="veo-3-fast"
-                #     )
-                #     print(f"✅ VEO SUCCESS! URL: {result['video_url']}")
-                # except Exception as e:
-                #     print(f"❌ VEO FAILED: {e}")
-
-
-    # Запускаем
-    try:
-        asyncio.run(manual_run())
-    except KeyboardInterrupt:
-        pass

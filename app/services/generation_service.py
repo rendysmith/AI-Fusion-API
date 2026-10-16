@@ -1,3 +1,5 @@
+"""Generation service for preparing and dispatching generation tasks."""
+
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -24,15 +26,16 @@ from app.settings import settings
 
 
 class GenerationService:
+    """Service for preparing and validating generation tasks."""
 
     def __init__(
-            self,
-            user: User,
-            ai_model_repo: AiModelRepository,
-            user_repo: UserRepository,
-            s3_client: aiobotocore.client.BaseClient,
-            task_repo: TaskRepository,
-            plan_access_repo: PlanAccessRepository
+        self,
+        user: User,
+        ai_model_repo: AiModelRepository,
+        user_repo: UserRepository,
+        s3_client: aiobotocore.client.BaseClient,
+        task_repo: TaskRepository,
+        plan_access_repo: PlanAccessRepository,
     ):
         self.user = user
         self.ai_model_repo = ai_model_repo
@@ -42,51 +45,48 @@ class GenerationService:
         self.plan_access_repo = plan_access_repo
 
     async def prepare_generation_task(
-            self, model_params: AnyModelParams
+        self, model_params: AnyModelParams,
     ) -> Tuple[str, Dict[str, Any], Decimal]:
-
-
+        """Validate, calculate cost, and prepare a generation task for queueing."""
         active_plan = await self.user_repo.get_user_active_plan(self.user.id)
 
         if not active_plan:
-
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail="No active subscription found. Please contact support."
+                detail="No active subscription found. Please contact support.",
             )
 
         limit = active_plan.concurrent_generation_limit
-
         current_count = await self.task_repo.get_processing_task_count(self.user.id)
 
         if current_count >= limit:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Concurrent generation limit reached ({limit}). Please wait."
+                detail=f"Concurrent generation limit reached ({limit}). Please wait.",
             )
-
 
         model_name = model_params.model_name
 
-        available_models = await self.plan_access_repo.get_models_for_plan(active_plan.id)
+        available_models = await self.plan_access_repo.get_models_for_plan(
+            active_plan.id,
+        )
 
-        is_allowed = False
-        for model in available_models:
-            if model.slug == model_name:
-                is_allowed = True
-                break
+        is_allowed = any(model.slug == model_name for model in available_models)
 
         if not is_allowed:
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail=f"Model '{model_name}' is not available for your current subscription plan ('{active_plan.slug}')."
+                detail=(
+                    f"Model '{model_name}' is not available for your "
+                    f"current subscription plan ('{active_plan.slug}')."
+                ),
             )
 
         processed_params = await process_and_upload_images(
             model_params=model_params,
             s3_client=self.s3_client,
             bucket_name=settings.YANDEX_BUCKET_NAME,
-            endpoint_url=settings.YANDEX_STORAGE_ENDPOINT
+            endpoint_url=settings.YANDEX_STORAGE_ENDPOINT,
         )
 
         await self._validate_and_get_price(model_name)
@@ -97,27 +97,28 @@ class GenerationService:
 
         if self.user.balance >= final_cost:
             worker_should_delay = False
-
         elif active_plan.has_unlimited and "sora" in model_name:
             final_cost = 0.0
             worker_should_delay = True
-
         else:
             error_payload = schemas.ErrorDetailInsufficientCredits(
                 balance=float(self.user.balance),
                 cost=final_cost,
                 model=model_name,
-                plan=active_plan.slug
+                plan=active_plan.slug,
             )
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail=error_payload.model_dump()
+                detail=error_payload.model_dump(),
             )
 
         new_balance = await self._deduct_funds(final_cost)
 
         if new_balance is None:
-            raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Insufficient credits")
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="Insufficient credits",
+            )
 
         task_id = str(uuid.uuid4())
         created_at = datetime.now(timezone.utc)
@@ -129,7 +130,7 @@ class GenerationService:
             prime_cost=prime_cost,
             created_at=created_at,
             plan_is_unlimited=worker_should_delay,
-            delay_factor=active_plan.unlimited_delay_factor
+            delay_factor=active_plan.unlimited_delay_factor,
         )
 
         await self.task_repo.create_pending_task(
@@ -139,22 +140,22 @@ class GenerationService:
             cost=final_cost,
             prime_cost=prime_cost,
             params=processed_params.model_dump(),
-            created_at=created_at
+            created_at=created_at,
         )
 
         return task_id, task_message_body, new_balance
 
     def _prepare_task_message(
-            self,
-            task_id: str,
-            model_params: schemas.AnyModelParams,
-            final_cost: float,
-            prime_cost: float,
-            created_at: datetime,
-            plan_is_unlimited: bool = False,
-            delay_factor: float = 1.0
+        self,
+        task_id: str,
+        model_params: schemas.AnyModelParams,
+        final_cost: float,
+        prime_cost: float,
+        created_at: datetime,
+        plan_is_unlimited: bool = False,
+        delay_factor: float = 1.0,
     ) -> dict:
-
+        """Prepare the message to be sent to the task queue."""
         return {
             "_id": task_id,
             "status": "pending",
@@ -171,7 +172,7 @@ class GenerationService:
         }
 
     async def _validate_and_get_price(self, model_name: str) -> AiModel:
-
+        """Validate that the model exists and is available."""
         price_obj = await self.ai_model_repo.get_by_slug(model_name)
 
         if not price_obj:
@@ -183,13 +184,18 @@ class GenerationService:
         if not price_obj.is_available:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Model '{model_name}' is temporarily disabled by the administrator",
+                detail=(
+                    f"Model '{model_name}' is temporarily disabled "
+                    f"by the administrator"
+                ),
             )
 
         return price_obj
 
-    async def _calculate_costs(self, model_params: schemas.AnyModelParams) -> tuple[float, float]:
-
+    async def _calculate_costs(
+        self, model_params: schemas.AnyModelParams,
+    ) -> tuple[float, float]:
+        """Calculate the final and prime cost for the generation."""
         model_name = model_params.model_name
 
         final_cost, prime_cost = await get_final_cost(
@@ -202,8 +208,8 @@ class GenerationService:
         return final_cost, prime_cost
 
     async def _deduct_funds(self, amount: float) -> Optional[Decimal]:
-
+        """Deduct funds from user balance."""
         new_balance = await self.user_repo.deduct_balance(
-            user_id=self.user.id, amount=amount
+            user_id=self.user.id, amount=amount,
         )
         return new_balance

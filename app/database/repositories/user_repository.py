@@ -1,3 +1,5 @@
+"""User data access repository."""
+
 import logging
 from decimal import Decimal
 from typing import Optional, Any, Sequence
@@ -20,91 +22,88 @@ from app.services.referral_service import HasherRef
 
 
 class BaseRepository:
+    """Base repository with session factory."""
+
     def __init__(self, session_factory: async_sessionmaker):
         self.session_factory = session_factory
 
 
 class UserRepository(BaseRepository):
+    """Repository for User model operations."""
 
     async def get_by_id(self, user_id: int) -> User | None:
+        """Get a user by their primary key ID."""
         async with self.session_factory() as session:
             return await session.get(User, user_id)
 
     async def get_by_firebase_uid(self, uid: str) -> User | None:
+        """Get a user by Firebase UID with subscription loaded."""
         async with self.session_factory() as session:
-
             stmt = (
                 select(User)
                 .where(User.firebase_uid == uid)
-                .options(
-                    selectinload(User.subscription).joinedload(UserSubscription.plan)
-                )
+                .options(selectinload(User.subscription).joinedload(UserSubscription.plan))
             )
             result = await session.execute(stmt)
             return result.scalars().first()
 
     async def get_by_telegram_id(self, telegram_id: int) -> User | None:
+        """Get a user by Telegram ID with subscription loaded."""
         async with self.session_factory() as session:
             stmt = (
                 select(User)
                 .where(User.telegram_id == telegram_id)
-                .options(
-                    selectinload(User.subscription).joinedload(UserSubscription.plan)
-                )
+                .options(selectinload(User.subscription).joinedload(UserSubscription.plan))
             )
             result = await session.execute(stmt)
             return result.scalars().first()
 
-    async def link_telegram_id(self, user_id: int,
-                               telegram_id: int) -> User | None:
-
+    async def link_telegram_id(self, user_id: int, telegram_id: int) -> User | None:
+        """Link a Telegram ID to a user account."""
         async with self.session_factory() as session:
             try:
-                stmt = update(User).where(User.id == user_id) \
-                    .values(telegram_id=telegram_id) \
+                stmt = (
+                    update(User)
+                    .where(User.id == user_id)
+                    .values(telegram_id=telegram_id)
                     .returning(User)
-
+                )
                 result = await session.execute(stmt)
                 await session.commit()
                 return result.scalars().one()
-
             except IntegrityError as e:
-
                 await session.rollback()
                 logging.warning(f"Failed to link TG ID {telegram_id} to User {user_id}: {e}")
                 return None
 
     async def link_firebase_uid(self, user_id: int, uid: str, email: str):
-
+        """Link a Firebase UID to an existing user."""
         async with self.session_factory() as session:
-            stmt = update(User).where(User.id == user_id) \
+            stmt = (
+                update(User)
+                .where(User.id == user_id)
                 .values(firebase_uid=uid, email=email)
+            )
             await session.execute(stmt)
             await session.commit()
 
     async def deduct_balance(self, user_id: int, amount: float) -> Optional[Decimal]:
-
+        """Deduct balance from user if sufficient funds exist."""
         amount_decimal = Decimal(str(amount))
 
         async with self.session_factory() as session:
             stmt = (
                 update(User)
-                .where(
-                    User.id == user_id,
-                    User.balance >= amount_decimal
-                )
+                .where(User.id == user_id, User.balance >= amount_decimal)
                 .values(balance=User.balance - amount_decimal)
                 .returning(User.balance)
             )
-
             new_balance = await session.scalar(stmt)
-
             await session.commit()
-
             return new_balance
 
     async def refund_balance(self, user_id: int, amount: float):
-
+        """Refund balance to a user."""
         async with self.session_factory() as session:
             stmt = (
                 update(User)
@@ -114,81 +113,71 @@ class UserRepository(BaseRepository):
             await session.execute(stmt)
             await session.commit()
 
-
     async def get_by_username(self, username: str) -> User | None:
+        """Get a user by username."""
         async with self.session_factory() as session:
             stmt = select(User).where(User.username == username)
             result = await session.execute(stmt)
             return result.scalars().first()
 
     async def create_or_update_profile(
-            self,
-            firebase_uid: str,
-            email: Optional[str],
-            payload: schemas.UserProfileUpdateRequest
+        self,
+        firebase_uid: str,
+        email: Optional[str],
+        payload: schemas.UserProfileUpdateRequest,
     ) -> User:
-
+        """Create or update a user profile using upsert."""
         async with self.session_factory() as session:
-
             update_data = payload.model_dump(exclude_unset=True)
-
 
             stmt = pg_insert(User).values(
                 firebase_uid=firebase_uid,
                 email=email,
-                **update_data
+                **update_data,
             )
 
             if not update_data:
                 on_conflict_stmt = stmt.on_conflict_do_nothing(
-                    index_elements=['firebase_uid']
+                    index_elements=["firebase_uid"],
                 )
             else:
-
                 on_conflict_stmt = stmt.on_conflict_do_update(
-                    index_elements=['firebase_uid'],
-                    set_=update_data
+                    index_elements=["firebase_uid"],
+                    set_=update_data,
                 )
 
             await session.execute(on_conflict_stmt)
             await session.commit()
 
-
             user = await self.get_by_firebase_uid(firebase_uid)
             if user is None:
                 raise Exception("User not found after UPSERT. This should not happen.")
-
             return user
 
     async def get_all_paginated_with_subs(
-            self, page: int, limit: int
+        self, page: int, limit: int,
     ) -> tuple[Sequence[User], int | None | Any]:
-
+        """Get paginated users with subscription data."""
         offset = (page - 1) * limit
 
         async with self.session_factory() as session:
-
             stmt_users = (
                 select(User)
                 .order_by(User.created_at.desc())
                 .offset(offset)
                 .limit(limit)
-                .options(
-
-                    selectinload(User.subscription).joinedload(UserSubscription.plan)
-                )
+                .options(selectinload(User.subscription).joinedload(UserSubscription.plan))
             )
             result_users = await session.execute(stmt_users)
             users = result_users.scalars().unique().all()
-
 
             stmt_count = select(func.count(User.id))
             total = (await session.scalar(stmt_count)) or 0
 
             return users, total
 
-
     async def block_user(self, firebase_uid: str, is_blocked: bool) -> Optional[User]:
+        """Block or unblock a user by Firebase UID."""
         async with self.session_factory() as session:
             user = await self.get_by_firebase_uid(firebase_uid)
             if not user:
@@ -200,20 +189,21 @@ class UserRepository(BaseRepository):
             return user
 
     async def get_user_active_plan(self, user_id: int) -> Optional[SubscriptionPlan]:
+        """Get the active subscription plan for a user."""
         async with self.session_factory() as session:
             stmt = (
                 select(SubscriptionPlan)
                 .join(UserSubscription, UserSubscription.plan_id == SubscriptionPlan.id)
                 .where(
                     UserSubscription.user_id == user_id,
-                    UserSubscription.status.in_(['active', 'pending_cancellation'])
+                    UserSubscription.status.in_(["active", "pending_cancellation"]),
                 )
             )
             result = await session.execute(stmt)
             return result.scalars().first()
 
     async def add_credits(self, user_id: int, amount: int):
-
+        """Add credits to a user's balance."""
         async with self.session_factory() as session:
             stmt = (
                 update(User)
@@ -224,19 +214,14 @@ class UserRepository(BaseRepository):
             await session.commit()
 
     async def add_credits_smart(self, identifier: str, amount: int) -> bool:
-        """
-        Ищет юзера по Telegram ID или Email и начисляет кредиты.
-        """
+        """Add credits to a user identified by Telegram ID or email."""
         async with self.session_factory() as session:
             stmt = select(User)
 
-
             if identifier.isdigit():
-
                 tg_id = int(identifier)
                 stmt = stmt.where(User.telegram_id == tg_id)
             else:
-
                 stmt = stmt.where(User.email == identifier)
 
             user = (await session.execute(stmt)).scalars().first()
@@ -245,25 +230,19 @@ class UserRepository(BaseRepository):
                 return False
 
             user.balance += Decimal(amount)
-
             await session.commit()
             return True
 
     async def get_user_full_details(self, identifier: str) -> dict:
-
+        """Get complete user details with stats and traffic info."""
         async with self.session_factory() as session:
-
-
             stmt_user = select(User).options(
-                selectinload(User.subscription).joinedload(UserSubscription.plan)
+                selectinload(User.subscription).joinedload(UserSubscription.plan),
             )
 
-
             if identifier.isdigit():
-
                 stmt_user = stmt_user.where(User.id == int(identifier))
             else:
-
                 stmt_user = stmt_user.where(User.firebase_uid == identifier)
 
             user = (await session.execute(stmt_user)).scalars().first()
@@ -273,23 +252,22 @@ class UserRepository(BaseRepository):
 
             real_user_id = user.id
 
-
             stmt_visitor = select(Visitor).where(Visitor.user_id == real_user_id)
             visitor = (await session.execute(stmt_visitor)).scalars().first()
 
-
             stmt_tasks = select(
                 func.count(GenerationTask.id).label("total"),
-                func.count(GenerationTask.id).filter(GenerationTask.status == 'completed').label("success"),
-                func.sum(GenerationTask.cost).label("spent")
+                func.count(GenerationTask.id)
+                .filter(GenerationTask.status == "completed")
+                .label("success"),
+                func.sum(GenerationTask.cost).label("spent"),
             ).where(GenerationTask.user_id == real_user_id)
 
             task_stats = (await session.execute(stmt_tasks)).one()
 
-
             stmt_money = select(func.sum(PaymentInvoice.amount)).where(
                 PaymentInvoice.user_id == real_user_id,
-                PaymentInvoice.status == 'paid'
+                PaymentInvoice.status == "paid",
             )
             money_spent = (await session.scalar(stmt_money)) or 0
 
@@ -300,59 +278,44 @@ class UserRepository(BaseRepository):
                     "total_generations": task_stats.total or 0,
                     "successful_generations": task_stats.success or 0,
                     "total_credits_spent": task_stats.spent or 0.0,
-                    "total_money_paid": money_spent
-                }
+                    "total_money_paid": money_spent,
+                },
             }
 
     async def register_user(self, payload: schemas.UserRegisterRequest) -> User:
-        """
-        Создает нового пользователя с проверкой реферального кода.
-        Если пользователь уже есть - возвращает ошибку (или существующего).
-        """
+        """Create a new user with referral code processing."""
         async with self.session_factory() as session:
-
             stmt = select(User).where(
                 or_(
                     User.firebase_uid == payload.firebase_uid,
-                    User.email == payload.email
+                    User.email == payload.email,
                 )
             )
             existing_user = (await session.execute(stmt)).scalars().first()
 
             if existing_user:
-
                 raise ValueError("User already exists")
-
-
 
             new_user = User(
                 firebase_uid=payload.firebase_uid,
                 email=payload.email,
                 username=payload.username,
                 photo_url=payload.photo_url,
-                registration_method='email',
-                balance=0.0
+                registration_method="email",
+                balance=0.0,
             )
 
-
             if payload.referral_code:
-
                 referrer_id = HasherRef.decode(payload.referral_code)
 
                 if referrer_id:
-
                     ref_stmt = select(User).where(User.id == referrer_id)
                     referrer = (await session.execute(ref_stmt)).scalars().first()
 
-
                     if referrer and not referrer.is_blocked:
-
                         new_user.referred_by_id = referrer.id
-
                         referrer.balance = User.balance + 100
-
                         session.add(referrer)
-
 
             session.add(new_user)
 
@@ -366,6 +329,7 @@ class UserRepository(BaseRepository):
             return new_user
 
     async def get_telegram_ids_paginated(self, limit: int, offset: int) -> list[int]:
+        """Get paginated list of telegram IDs."""
         async with self.session_factory() as session:
             stmt = (
                 select(User.telegram_id)

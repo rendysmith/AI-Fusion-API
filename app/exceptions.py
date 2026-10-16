@@ -1,19 +1,25 @@
+"""Custom exception hierarchy for AI provider errors."""
+
+
 class AIProviderError(Exception):
-    """Базовый класс для всех ошибок провайдеров"""
+    """Base exception for all AI provider errors."""
+
     pass
 
 
 class FatalProviderError(AIProviderError):
+    """Critical service error (500, Timeout, Rate Limit, Network Error).
+
+    The worker should break the circuit and attempt a fallback.
     """
-    Критическая ошибка сервиса (500, Timeout, Rate Limit, Network Error).
-    Воркер должен разорвать цепь и попробовать Fallback.
-    """
+
     pass
 
 
 class UserValidationError(AIProviderError):
+    """User-side validation error (NSFW, Content Policy, 400 error).
+
+    The worker should mark the task as failed without affecting the circuit.
     """
-    Ошибка валидации со стороны пользователя (NSFW, Content Policy, ошибка 400).
-    Воркер должен просто пометить задачу как failed, не трогая цепь.
-    """
+
     pass
