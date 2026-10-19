@@ -6,15 +6,15 @@ Built with FastAPI, PostgreSQL, Redis, and async task processing via SQS.
 ## Architecture Overview
 
 ```
-┌─────────────┐     ┌──────────┐     ┌─────────────┐
+┌──────────────┐     ┌──────────┐     ┌─────────────┐
 │  FastAPI App │────▶│  SQS     │────▶│  Worker     │
 │  (REST API)  │     │  Queue   │     │  (Consumer) │
-└──────┬───────┘     └──────────┘     └──────┬───────┘
+└──────┬───────┘     └──────────┘     └───────┬─────┘
        │                                      │
        ▼                                      ▼
 ┌──────────────┐                    ┌─────────────────┐
-│  PostgreSQL  │                    │  Yandex S3 /     │
-│  + Redis     │                    │  AI Providers    │
+│  PostgreSQL  │                    │  Yandex S3 /    │
+│  + Redis     │                    │  AI Providers   │
 └──────────────┘                    └─────────────────┘
 ```
 
