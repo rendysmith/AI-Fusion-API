@@ -1,1 +1,1 @@
-"""Viralix backend application package."""
+"""AI-Fusion-API backend application package."""

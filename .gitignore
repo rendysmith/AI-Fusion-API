@@ -3,7 +3,8 @@
 .env.production
 .env*
 
-*.json
+firebase-service-account.json
+authorized_key.json
 
 __pycache__/
 *.pyc

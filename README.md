@@ -1,4 +1,4 @@
-# Viralix Backend
+# AI-Fusion-API
 
 AI-powered content generation platform with video, image, and text-to-text capabilities.
 Built with FastAPI, PostgreSQL, Redis, and async task processing via SQS.
@@ -32,7 +32,7 @@ Built with FastAPI, PostgreSQL, Redis, and async task processing via SQS.
 ## Project Structure
 
 ```
-viralix-backend/
+ai-fusion-api/
 ├── app/
 │   ├── main.py                    # FastAPI app entry point
 │   ├── worker.py                  # Background task processor
